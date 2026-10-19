@@ -1,7 +1,8 @@
 import { NextResponse } from "next/server";
-import { PrismaClient } from "@prisma/client";
+import { getPrisma } from "@/lib/prisma";
 
-const prisma = new PrismaClient();
+export const runtime = "nodejs";
+export const dynamic = "force-dynamic";
 
 // GET /api/trends?test=hemoglobin
 // Returns chronological readings for a given test name across all reports,
@@ -27,6 +28,7 @@ function directionFor(testName) {
 
 export async function GET(request) {
   try {
+    const prisma = await getPrisma();
     const { searchParams } = new URL(request.url);
     const testName = searchParams.get("test")?.trim().toLowerCase();
     if (!testName) {

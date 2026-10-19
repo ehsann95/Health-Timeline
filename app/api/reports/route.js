@@ -1,11 +1,12 @@
 import { NextResponse } from "next/server";
-import { PrismaClient } from "@prisma/client";
 import { buildSummary } from "@/lib/extractor";
-
-const prisma = new PrismaClient();
+import { getPrisma } from "@/lib/prisma";
+export const runtime = "nodejs";
+export const dynamic = "force-dynamic";
 
 export async function GET(request) {
   try {
+    const prisma = await getPrisma();
     const { searchParams } = new URL(request.url);
     const q = searchParams.get("q")?.trim() || "";
     const flag = searchParams.get("flag") || "";       // "" | HIGH | LOW | ABNORMAL | NORMAL

@@ -29,7 +29,7 @@ export default function UploadPanel({ onUploaded }) {
         msg: `Parsed ${data.parsedCount} test values (via ${data.extractionMethod}). Check the report below — use Edit to fix any misread values.`,
       });
       setFile(null);
-      onUploaded?.();
+      onUploaded?.(data.report);
     } catch (err) {
       setStatus({ type: "error", msg: err.message });
     } finally {

@@ -1,14 +1,14 @@
 import { NextResponse } from "next/server";
-import { PrismaClient } from "@prisma/client";
-import { extractText, parseTests } from "@/lib/extractor";
-
-const prisma = new PrismaClient();
+import { extractText, parseTests, buildSummary } from "@/lib/extractor";
+import { getPrisma } from "@/lib/prisma";
 
 export const runtime = "nodejs";
+export const dynamic = "force-dynamic";
 export const maxDuration = 60;
 
 export async function POST(request) {
   try {
+    const prisma = await getPrisma();
     const formData = await request.formData();
     const file = formData.get("file");
     if (!file || typeof file === "string") {
@@ -32,22 +32,34 @@ export async function POST(request) {
 
     const parsedTests = parseTests(extraction.text);
 
+    let reportDate = new Date();
+    const rawDate = formData.get("reportDate");
+    if (rawDate) {
+      const parsedDate = new Date(rawDate);
+      if (!isNaN(parsedDate.getTime())) {
+        reportDate = parsedDate;
+      }
+    }
+
     const report = await prisma.report.create({
       data: {
         patientName: formData.get("patientName") || "Self",
         reportType: formData.get("reportType") || "Unknown",
         labName: formData.get("labName") || null,
-        reportDate: formData.get("reportDate")
-          ? new Date(formData.get("reportDate"))
-          : new Date(),
+        reportDate,
         rawText: extraction.text,
         tests: { create: parsedTests },
       },
       include: { tests: true },
     });
 
+    const reportWithSummary = {
+      ...report,
+      summary: buildSummary(report.tests || []),
+    };
+
     return NextResponse.json({
-      report,
+      report: reportWithSummary,
       extractionMethod: extraction.method,
       parsedCount: parsedTests.length,
     });

@@ -1,7 +1,5 @@
-const { PrismaClient } = require("@prisma/client");
+const { getPrisma } = require("../lib/prisma");
 const { execSync } = require("child_process");
-
-const prisma = new PrismaClient();
 
 // Generates 3 sample reports so the app demos instantly
 function makeSample() {
@@ -46,6 +44,7 @@ function makeSample() {
 }
 
 async function main() {
+  const prisma = await getPrisma();
   const existing = await prisma.report.count();
   if (existing > 0) {
     console.log("Seed skipped: reports already exist:", existing);
@@ -59,4 +58,7 @@ async function main() {
 
 main()
   .catch((e) => { console.error(e); process.exit(1); })
-  .finally(() => prisma.$disconnect());
+  .finally(async () => {
+    const prisma = await getPrisma();
+    await prisma.$disconnect();
+  });

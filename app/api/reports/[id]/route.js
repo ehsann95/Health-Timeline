@@ -1,11 +1,13 @@
 import { NextResponse } from "next/server";
-import { PrismaClient } from "@prisma/client";
-
-const prisma = new PrismaClient();
+import { getPrisma } from "@/lib/prisma";
+export const runtime = "nodejs";
+export const dynamic = "force-dynamic";
 
 export async function PUT(request, { params }) {
   try {
-    const { id } = params;
+    const prisma = await getPrisma();
+    const resolvedParams = await Promise.resolve(params);
+    const { id } = resolvedParams;
     const body = await request.json();
 
     if (body.tests && Array.isArray(body.tests)) {
@@ -43,7 +45,10 @@ export async function PUT(request, { params }) {
     }
 
     const data = {};
-    if (body.reportDate) data.reportDate = new Date(body.reportDate);
+    if (body.reportDate) {
+      const d = new Date(body.reportDate);
+      if (!isNaN(d.getTime())) data.reportDate = d;
+    }
     if (body.reportType) data.reportType = body.reportType;
     if (body.labName !== undefined) data.labName = body.labName;
     if (body.patientName) data.patientName = body.patientName;
@@ -63,7 +68,9 @@ export async function PUT(request, { params }) {
 
 export async function DELETE(request, { params }) {
   try {
-    const { id } = params;
+    const prisma = await getPrisma();
+    const resolvedParams = await Promise.resolve(params);
+    const { id } = resolvedParams;
     await prisma.report.delete({ where: { id } });
     return NextResponse.json({ ok: true });
   } catch (e) {

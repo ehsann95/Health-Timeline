@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { LineChart, Line, XAxis, YAxis, Tooltip, ResponsiveContainer, ReferenceArea, ReferenceDot, CartesianGrid } from "recharts";
 
 const DIRECTION_BADGE = {
@@ -9,15 +9,103 @@ const DIRECTION_BADGE = {
   STABLE: { text: "➡️ Stable", cls: "bg-slate-100 text-slate-600" },
 };
 
-export default function ComparePanel({ testNames }) {
+const DIRECTIONAL = {
+  "alt": true, "sgpt": true, "ast": true, "sgot": true,
+  "creatinine": true, "urea": true, "blood urea": true,
+  "ldl": true, "triglycerides": true, "total cholesterol": true,
+  "crp": true, "uric acid": true, "tsh": true, "esr": true,
+  "hba1c": true, "fbs": true, "fasting blood sugar": true,
+  "hemoglobin": false, "hdl": false, "vitamin d": false,
+  "vitamin b12": false, "platelet": false, "rbc": false, "egfr": false, "gfr": false,
+};
+
+function directionFor(testName) {
+  const lower = testName.toLowerCase();
+  for (const [key, lowerIsBetter] of Object.entries(DIRECTIONAL)) {
+    if (lower.includes(key)) return lowerIsBetter;
+  }
+  return null;
+}
+
+function computeTrendFromReports(testName, reportsList) {
+  if (!testName || !reportsList || !reportsList.length) return null;
+  const sortedReports = [...reportsList].sort(
+    (a, b) => new Date(a.reportDate || a.createdAt) - new Date(b.reportDate || b.createdAt)
+  );
+
+  const readings = [];
+  const lower = testName.toLowerCase();
+  for (const r of sortedReports) {
+    for (const t of r.tests || []) {
+      if ((t.name || "").toLowerCase().includes(lower)) {
+        readings.push({
+          date: r.reportDate || r.createdAt,
+          reportId: r.id,
+          reportType: r.reportType,
+          value: t.value,
+          unit: t.unit,
+          refLow: t.refLow,
+          refHigh: t.refHigh,
+          flag: t.flag,
+        });
+      }
+    }
+  }
+
+  let direction = "STABLE";
+  if (readings.length >= 2) {
+    const prev = readings[readings.length - 2];
+    const curr = readings[readings.length - 1];
+    if (curr.value !== prev.value) {
+      const lowerIsBetter = directionFor(testName);
+      if (lowerIsBetter != null) {
+        const improving = lowerIsBetter ? curr.value < prev.value : curr.value > prev.value;
+        direction = improving ? "IMPROVING" : "WORSENING";
+      } else {
+        const mid = (r) => ((r.refLow ?? 0) + (r.refHigh ?? r.value)) / 2;
+        const distPrev = Math.abs(prev.value - mid(prev));
+        const distCurr = Math.abs(curr.value - mid(curr));
+        direction = distCurr < distPrev ? "IMPROVING" : "WORSENING";
+      }
+    }
+  }
+
+  return { testName, readings, direction };
+}
+
+export default function ComparePanel({ testNames = [], reports = [] }) {
   const [selected, setSelected] = useState(testNames[0] || "");
   const [data, setData] = useState(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState(null);
 
-  async function loadTest(name) {
-    setSelected(name);
-    if (!name) return setData(null);
+  useEffect(() => {
+    if (!selected && testNames.length > 0) {
+      setSelected(testNames[0]);
+    }
+  }, [testNames, selected]);
+
+  useEffect(() => {
+    if (!selected) {
+      setData(null);
+      return;
+    }
+
+    if (reports && reports.length > 0) {
+      const computed = computeTrendFromReports(selected, reports);
+      if (computed && computed.readings.length > 0) {
+        setData(computed);
+        setLoading(false);
+        setError(null);
+        return;
+      }
+    }
+
+    loadTestFromServer(selected);
+  }, [selected, reports]);
+
+  async function loadTestFromServer(name) {
+    if (!name) return;
     setLoading(true);
     setError(null);
     try {
@@ -46,7 +134,7 @@ export default function ComparePanel({ testNames }) {
         <h2 className="text-lg font-semibold">Compare over time</h2>
         <select
           value={selected}
-          onChange={(e) => loadTest(e.target.value)}
+          onChange={(e) => setSelected(e.target.value)}
           className="border rounded-md px-3 py-1.5 text-sm"
         >
           <option value="">— pick a test —</option>

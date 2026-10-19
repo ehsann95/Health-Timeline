@@ -26,24 +26,46 @@ export default function ReportCard({ report, onSaved, onDeleted }) {
 
   async function saveEdits() {
     setBusy(true);
+    const updatedTests = rows.map((r) => {
+      const val = parseFloat(r.value);
+      const low = r.refLow === "" || r.refLow == null ? null : parseFloat(r.refLow);
+      const high = r.refHigh === "" || r.refHigh == null ? null : parseFloat(r.refHigh);
+      let flag = "NORMAL";
+      if (low != null && val < low) flag = "LOW";
+      else if (high != null && val > high) flag = "HIGH";
+      return {
+        ...r,
+        value: val,
+        refLow: low,
+        refHigh: high,
+        flag: r.flag || flag,
+        verified: true,
+      };
+    });
+
+    const updatedReport = {
+      ...report,
+      tests: updatedTests,
+    };
+
     try {
       const res = await fetch(`/api/reports/${report.id}`, {
         method: "PUT",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          tests: rows.map((r) => ({
-            ...r,
-            value: parseFloat(r.value),
-            refLow: r.refLow === "" || r.refLow == null ? null : parseFloat(r.refLow),
-            refHigh: r.refHigh === "" || r.refHigh == null ? null : parseFloat(r.refHigh),
-          })),
-        }),
+        body: JSON.stringify({ tests: updatedTests }),
       });
       const data = await res.json();
       if (data.report) {
         setRows(data.report.tests);
-        onSaved?.();
+        onSaved?.(data.report);
+      } else {
+        setRows(updatedTests);
+        onSaved?.(updatedReport);
       }
+      setEditing(false);
+    } catch {
+      setRows(updatedTests);
+      onSaved?.(updatedReport);
       setEditing(false);
     } finally {
       setBusy(false);
@@ -52,8 +74,10 @@ export default function ReportCard({ report, onSaved, onDeleted }) {
 
   async function deleteReport() {
     if (!confirm("Delete this report permanently?")) return;
-    await fetch(`/api/reports/${report.id}`, { method: "DELETE" });
-    onDeleted?.();
+    try {
+      await fetch(`/api/reports/${report.id}`, { method: "DELETE" });
+    } catch {}
+    onDeleted?.(report.id);
   }
 
   return (
