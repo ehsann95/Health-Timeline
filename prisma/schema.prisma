@@ -1,0 +1,37 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "sqlite"
+  url      = "file:./dev.db"
+}
+
+model Report {
+  id          String     @id @default(cuid())
+  patientName String     @default("Self")
+  reportType  String
+  labName     String?
+  reportDate  DateTime?
+  rawText     String?
+  createdAt   DateTime   @default(now())
+  tests       Test[]
+}
+
+model Test {
+  id        String  @id @default(cuid())
+  reportId  String
+  name      String
+  category  String  @default("Other")
+  value     Float
+  unit      String?
+  refLow    Float?
+  refHigh   Float?
+  flag      String  @default("NORMAL") // NORMAL | HIGH | LOW
+  verified  Boolean @default(false)
+
+  report Report @relation(fields: [reportId], references: [id], onDelete: Cascade)
+
+  @@index([reportId])
+  @@index([name])
+}
