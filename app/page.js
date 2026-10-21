@@ -1,19 +1,25 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
-import UploadPanel from "@/components/UploadPanel";
+import { useMemo, useState } from "react";
+import Link from "next/link";
 import ReportCard from "@/components/ReportCard";
-import ComparePanel from "@/components/ComparePanel";
+import { useReports } from "@/context/ReportsContext";
 
-const STORAGE_KEY = "health_timeline_reports_v1";
-
-function applyFilters(reports, { q, flag, reportType, from, to }) {
+function applyFilters(reports, { q, flag, reportType, lab, from, to }) {
   let filtered = reports;
+
+  if (lab) {
+    const labNeedle = lab.toLowerCase();
+    filtered = filtered.filter((r) =>
+      (r.labName || "").toLowerCase().includes(labNeedle)
+    );
+  }
 
   if (reportType) {
     const needle = reportType.toLowerCase();
     filtered = filtered.filter((r) =>
-      (r.reportType || "").toLowerCase().includes(needle)
+      (r.reportType || "").toLowerCase().includes(needle) ||
+      (r.tests || []).some((t) => (t.category || "").toLowerCase() === needle)
     );
   }
 
@@ -62,217 +68,238 @@ function applyFilters(reports, { q, flag, reportType, from, to }) {
 }
 
 export default function Home() {
-  const [rawReports, setRawReports] = useState([]);
-  const [loading, setLoading] = useState(true);
+  const { reports, loading, allLabNames, updateReport, deleteReport } = useReports();
 
-  // filters
+  // Filters state
   const [q, setQ] = useState("");
   const [flag, setFlag] = useState("");
   const [reportType, setReportType] = useState("");
+  const [lab, setLab] = useState("");
   const [from, setFrom] = useState("");
   const [to, setTo] = useState("");
-  const [view, setView] = useState("reports"); // reports | compare
 
-  // Initialize reports from localStorage or API on first visit
-  useEffect(() => {
-    try {
-      const cached = localStorage.getItem(STORAGE_KEY);
-      if (cached) {
-        const parsed = JSON.parse(cached);
-        if (Array.isArray(parsed) && parsed.length > 0) {
-          setRawReports(parsed);
-          setLoading(false);
-          return;
-        }
-      }
-    } catch (e) {
-      console.warn("Could not read from localStorage:", e);
-    }
+  const hasActiveFilters = Boolean(q || flag || reportType || lab || from || to);
 
-    // Initial load from server
-    fetch("/api/reports")
-      .then((res) => res.json())
-      .then((data) => {
-        if (data.reports && Array.isArray(data.reports)) {
-          setRawReports(data.reports);
-          try {
-            localStorage.setItem(STORAGE_KEY, JSON.stringify(data.reports));
-          } catch {}
-        }
-      })
-      .catch((err) => console.error("Failed to load initial reports:", err))
-      .finally(() => setLoading(false));
-  }, []);
-
-  function persistReports(newList) {
-    setRawReports(newList);
-    try {
-      localStorage.setItem(STORAGE_KEY, JSON.stringify(newList));
-    } catch (e) {
-      console.warn("Failed to save to localStorage:", e);
-    }
+  function clearFilters() {
+    setQ("");
+    setFlag("");
+    setReportType("");
+    setLab("");
+    setFrom("");
+    setTo("");
   }
 
-  function handleUploaded(newReport) {
-    if (!newReport) return;
-    setRawReports((prev) => {
-      const filtered = prev.filter((r) => r.id !== newReport.id);
-      const next = [newReport, ...filtered];
-      try {
-        localStorage.setItem(STORAGE_KEY, JSON.stringify(next));
-      } catch (e) {
-        console.warn("Failed to persist uploaded report:", e);
-      }
-      return next;
-    });
-  }
-
-  function handleSaved(updatedReport) {
-    if (!updatedReport) return;
-    setRawReports((prev) => {
-      const next = prev.map((r) => (r.id === updatedReport.id ? updatedReport : r));
-      try {
-        localStorage.setItem(STORAGE_KEY, JSON.stringify(next));
-      } catch (e) {
-        console.warn("Failed to persist edited report:", e);
-      }
-      return next;
-    });
-  }
-
-  function handleDeleted(reportId) {
-    if (!reportId) return;
-    setRawReports((prev) => {
-      const next = prev.filter((r) => r.id !== reportId);
-      try {
-        localStorage.setItem(STORAGE_KEY, JSON.stringify(next));
-      } catch (e) {
-        console.warn("Failed to persist deletion:", e);
-      }
-      return next;
-    });
-  }
-
-  async function handleResetToDemo() {
-    if (!confirm("Reset to sample demo data? Any custom uploaded reports will be replaced.")) return;
-    setLoading(true);
-    try {
-      localStorage.removeItem(STORAGE_KEY);
-      const res = await fetch("/api/reports");
-      const data = await res.json();
-      if (data.reports && Array.isArray(data.reports)) {
-        persistReports(data.reports);
-      }
-    } catch (err) {
-      console.error("Failed to reset demo reports:", err);
-    } finally {
-      setLoading(false);
-    }
-  }
-
-  // Filtered reports for view
+  // Filtered reports
   const displayedReports = useMemo(() => {
-    return applyFilters(rawReports, { q, flag, reportType, from, to });
-  }, [rawReports, q, flag, reportType, from, to]);
+    return applyFilters(reports, { q, flag, reportType, lab, from, to });
+  }, [reports, q, flag, reportType, lab, from, to]);
 
   // Overall summary stats
   const summary = useMemo(() => {
     return {
-      totalReports: displayedReports.length,
-      totalTests: displayedReports.reduce((n, r) => n + (r.tests?.length || 0), 0),
-      abnormalTests: displayedReports.reduce(
+      totalReports: reports.length,
+      totalTests: reports.reduce((n, r) => n + (r.tests?.length || 0), 0),
+      abnormalTests: reports.reduce(
         (n, r) => n + (r.tests?.filter((t) => t.flag !== "NORMAL").length || 0),
         0
       ),
+      totalLabs: allLabNames.length,
     };
-  }, [displayedReports]);
-
-  // Distinct test names for Compare panel across all loaded reports
-  const allTestNames = useMemo(() => {
-    return [...new Set(rawReports.flatMap((r) => (r.tests || []).map((t) => t.name)))].sort();
-  }, [rawReports]);
+  }, [reports, allLabNames]);
 
   return (
-    <main className="max-w-5xl mx-auto px-4 py-8 space-y-6">
-      <header className="flex flex-wrap items-center justify-between gap-3">
+    <div className="space-y-6">
+      {/* Page Header */}
+      <div className="flex flex-wrap items-center justify-between gap-4">
         <div>
-          <h1 className="text-2xl font-bold">🧪 Health Timeline</h1>
-          <p className="text-sm text-slate-500">Store, understand and compare your lab reports — private &amp; local.</p>
+          <h1 className="text-2xl font-bold text-slate-900">Lab Reports Timeline</h1>
+          <p className="text-sm text-slate-500">
+            Review, filter, and track biomarkers across all your lab visits.
+          </p>
         </div>
-        <div className="flex rounded-lg border overflow-hidden text-sm font-medium">
-          <button onClick={() => setView("reports")} className={`px-4 py-2 ${view === "reports" ? "bg-blue-600 text-white" : "bg-white hover:bg-slate-50"}`}>Reports</button>
-          <button onClick={() => setView("compare")} className={`px-4 py-2 ${view === "compare" ? "bg-blue-600 text-white" : "bg-white hover:bg-slate-50"}`}>Compare</button>
+        <div className="flex items-center gap-2">
+          <Link
+            href="/upload"
+            className="inline-flex items-center gap-2 bg-blue-600 hover:bg-blue-700 text-white font-medium text-sm px-4 py-2 rounded-lg transition-colors shadow-sm"
+          >
+            <span>+ Upload Report</span>
+          </Link>
+          <Link
+            href="/compare"
+            className="inline-flex items-center gap-1.5 bg-white border border-slate-200 hover:bg-slate-50 text-slate-700 font-medium text-sm px-3.5 py-2 rounded-lg transition-colors shadow-sm"
+          >
+            <span>📈 Compare</span>
+          </Link>
         </div>
-      </header>
+      </div>
 
-      {/* Dashboard stats */}
-      <div className="grid grid-cols-3 gap-3">
+      {/* Summary KPI Cards */}
+      <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
         {[
-          { label: "Reports", value: summary.totalReports, cls: "text-slate-900" },
-          { label: "Test values", value: summary.totalTests, cls: "text-slate-900" },
-          { label: "Out of range", value: summary.abnormalTests, cls: summary.abnormalTests > 0 ? "text-red-600" : "text-green-600" },
+          { label: "Reports", value: summary.totalReports, icon: "📋", cls: "text-slate-900" },
+          { label: "Biomarker Tests", value: summary.totalTests, icon: "🔬", cls: "text-slate-900" },
+          {
+            label: "Out of Range",
+            value: summary.abnormalTests,
+            icon: "⚠️",
+            cls: summary.abnormalTests > 0 ? "text-red-600 font-bold" : "text-green-600",
+          },
+          { label: "Labs Tracked", value: summary.totalLabs, icon: "🏥", cls: "text-slate-900" },
         ].map((s) => (
-          <div key={s.label} className="bg-white rounded-xl shadow p-4 text-center">
-            <div className={`text-2xl font-bold ${s.cls}`}>{s.value}</div>
-            <div className="text-xs text-slate-500">{s.label}</div>
+          <div key={s.label} className="bg-white rounded-xl shadow-sm border border-slate-200 p-4">
+            <div className="flex items-center justify-between text-xs text-slate-500 mb-1">
+              <span>{s.label}</span>
+              <span>{s.icon}</span>
+            </div>
+            <div className={`text-2xl font-bold ${s.cls}`}>{loading ? "…" : s.value}</div>
           </div>
         ))}
       </div>
 
-      <UploadPanel onUploaded={handleUploaded} />
-
-      {view === "reports" ? (
-        <>
-          {/* Search & filters */}
-          <div className="bg-white rounded-xl shadow p-4 grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-3">
+      {/* Search & Filter Bar */}
+      <div className="bg-white rounded-xl shadow-sm border border-slate-200 p-4 space-y-3">
+        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3">
+          {/* Keyword Search */}
+          <div className="relative">
             <input
               value={q}
               onChange={(e) => setQ(e.target.value)}
-              placeholder="🔍 Search test name, type, lab…"
-              className="border rounded-md px-3 py-2 text-sm lg:col-span-2"
+              placeholder="Search tests, labs, notes…"
+              className="w-full border border-slate-300 rounded-lg pl-8 pr-3 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
             />
-            <select value={flag} onChange={(e) => setFlag(e.target.value)} className="border rounded-md px-3 py-2 text-sm">
-              <option value="">All values</option>
-              <option value="ABNORMAL">⚠️ Only abnormal</option>
-              <option value="HIGH">▲ Only above range</option>
-              <option value="LOW">▼ Only below range</option>
-              <option value="NORMAL">✓ Only normal</option>
-            </select>
-            <input type="date" value={from} onChange={(e) => setFrom(e.target.value)} className="border rounded-md px-3 py-2 text-sm" title="From date" />
-            <input type="date" value={to} onChange={(e) => setTo(e.target.value)} className="border rounded-md px-3 py-2 text-sm" title="To date" />
+            <span className="absolute left-2.5 top-2 text-slate-400 text-xs">🔍</span>
           </div>
 
-          {loading && <p className="text-sm text-slate-500 text-center py-4">Loading reports…</p>}
-          {!loading && displayedReports.length === 0 && (
-            <div className="text-center py-10 text-slate-400">
-              No reports match. Upload a report above, or adjust filters.
-            </div>
-          )}
-
-          <div className="space-y-4">
-            {displayedReports.map((r) => (
-              <ReportCard
-                key={r.id}
-                report={r}
-                onSaved={handleSaved}
-                onDeleted={handleDeleted}
-              />
+          {/* Lab Filter */}
+          <select
+            value={lab}
+            onChange={(e) => setLab(e.target.value)}
+            className="w-full border border-slate-300 rounded-lg px-3 py-1.5 text-sm bg-white focus:outline-none focus:ring-2 focus:ring-blue-500"
+          >
+            <option value="">All Labs ({allLabNames.length})</option>
+            {allLabNames.map((name) => (
+              <option key={name} value={name}>
+                🏥 {name}
+              </option>
             ))}
-          </div>
-        </>
-      ) : (
-        <ComparePanel testNames={allTestNames} reports={rawReports} />
-      )}
+          </select>
 
-      <footer className="flex flex-wrap items-center justify-between text-xs text-slate-400 pt-6 pb-2">
-        <span>Prototype · All data stays in your local storage · Not medical advice</span>
-        <button
-          onClick={handleResetToDemo}
-          className="text-slate-500 hover:text-slate-700 underline"
-        >
-          Reset to sample demo
-        </button>
-      </footer>
-    </main>
+          {/* Panel / Category Filter */}
+          <select
+            value={reportType}
+            onChange={(e) => setReportType(e.target.value)}
+            className="w-full border border-slate-300 rounded-lg px-3 py-1.5 text-sm bg-white focus:outline-none focus:ring-2 focus:ring-blue-500"
+          >
+            <option value="">All Panels</option>
+            <option value="CBC">🩸 Complete Blood Count (CBC)</option>
+            <option value="LFT">🧪 Liver Function (LFT)</option>
+            <option value="KFT">🫘 Kidney Function (KFT)</option>
+            <option value="Lipid">🫀 Lipid Profile</option>
+            <option value="Thyroid">🦋 Thyroid Profile</option>
+            <option value="Blood Sugar">🍬 Blood Sugar / Glucose</option>
+            <option value="Vitamins">💊 Vitamins</option>
+            <option value="Other">📋 Other</option>
+          </select>
+
+          {/* Flag / Abnormal Filter */}
+          <select
+            value={flag}
+            onChange={(e) => setFlag(e.target.value)}
+            className="w-full border border-slate-300 rounded-lg px-3 py-1.5 text-sm bg-white focus:outline-none focus:ring-2 focus:ring-blue-500"
+          >
+            <option value="">All Test Values</option>
+            <option value="ABNORMAL">⚠️ Out of Range Only</option>
+            <option value="HIGH">🔴 High Only</option>
+            <option value="LOW">🔵 Low Only</option>
+            <option value="NORMAL">🟢 Normal Only</option>
+          </select>
+        </div>
+
+        {/* Date Range & Clear Filters Row */}
+        <div className="flex flex-wrap items-center justify-between gap-3 pt-2 border-t border-slate-100 text-xs">
+          <div className="flex flex-wrap items-center gap-2 text-slate-600">
+            <span className="font-medium text-slate-500">Date Range:</span>
+            <input
+              type="date"
+              value={from}
+              onChange={(e) => setFrom(e.target.value)}
+              className="border border-slate-300 rounded px-2 py-1 text-xs"
+              placeholder="From"
+            />
+            <span>to</span>
+            <input
+              type="date"
+              value={to}
+              onChange={(e) => setTo(e.target.value)}
+              className="border border-slate-300 rounded px-2 py-1 text-xs"
+              placeholder="To"
+            />
+          </div>
+
+          <div className="flex items-center gap-3">
+            <span className="text-slate-500">
+              Showing <span className="font-semibold text-slate-800">{displayedReports.length}</span> of{" "}
+              {reports.length} reports
+            </span>
+            {hasActiveFilters && (
+              <button
+                onClick={clearFilters}
+                className="text-blue-600 hover:text-blue-800 font-medium underline"
+              >
+                Clear all filters
+              </button>
+            )}
+          </div>
+        </div>
+      </div>
+
+      {/* Reports List */}
+      {loading ? (
+        <div className="bg-white rounded-xl shadow-sm border border-slate-200 p-12 text-center text-slate-500">
+          Loading reports…
+        </div>
+      ) : reports.length === 0 ? (
+        <div className="bg-white rounded-xl shadow-sm border border-slate-200 p-12 text-center space-y-4">
+          <div className="text-4xl">📄</div>
+          <h3 className="text-lg font-bold text-slate-800">No lab reports found</h3>
+          <p className="text-sm text-slate-500 max-w-md mx-auto">
+            You haven&apos;t uploaded any laboratory test reports yet. Upload a PDF or photo of your lab report to extract and track biomarkers.
+          </p>
+          <div>
+            <Link
+              href="/upload"
+              className="inline-flex items-center gap-2 bg-blue-600 hover:bg-blue-700 text-white px-5 py-2.5 rounded-lg text-sm font-medium transition-colors shadow-sm"
+            >
+              <span>+ Upload Your First Report</span>
+            </Link>
+          </div>
+        </div>
+      ) : displayedReports.length === 0 ? (
+        <div className="bg-white rounded-xl shadow-sm border border-slate-200 p-12 text-center space-y-3">
+          <div className="text-3xl">🔍</div>
+          <h3 className="text-base font-semibold text-slate-800">No reports match your filters</h3>
+          <p className="text-sm text-slate-500">
+            Try adjusting your search keywords, clearing panel or lab selections, or resetting the date range.
+          </p>
+          <button
+            onClick={clearFilters}
+            className="inline-flex items-center gap-1.5 bg-slate-100 hover:bg-slate-200 text-slate-700 px-4 py-2 rounded-lg text-xs font-medium transition-colors"
+          >
+            Clear Filters
+          </button>
+        </div>
+      ) : (
+        <div className="space-y-4">
+          {displayedReports.map((r) => (
+            <ReportCard
+              key={r.id}
+              report={r}
+              onSaved={updateReport}
+              onDeleted={deleteReport}
+            />
+          ))}
+        </div>
+      )}
+    </div>
   );
 }

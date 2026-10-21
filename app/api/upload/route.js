@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import { extractText, parseTests, buildSummary } from "@/lib/extractor";
+import { extractText, parseTests, buildSummary, detectReportType } from "@/lib/extractor";
 import { getPrisma } from "@/lib/prisma";
 
 export const runtime = "nodejs";
@@ -13,6 +13,20 @@ export async function POST(request) {
     const file = formData.get("file");
     if (!file || typeof file === "string") {
       return NextResponse.json({ error: "No file provided" }, { status: 400 });
+    }
+
+    const labName = formData.get("labName")?.toString().trim();
+    if (!labName) {
+      return NextResponse.json({ error: "Lab name is required" }, { status: 400 });
+    }
+
+    const rawDate = formData.get("reportDate");
+    if (!rawDate) {
+      return NextResponse.json({ error: "Report date is required" }, { status: 400 });
+    }
+    const reportDate = new Date(rawDate);
+    if (isNaN(reportDate.getTime())) {
+      return NextResponse.json({ error: "Invalid report date format" }, { status: 400 });
     }
 
     const buffer = Buffer.from(await file.arrayBuffer());
@@ -32,20 +46,14 @@ export async function POST(request) {
 
     const parsedTests = parseTests(extraction.text);
 
-    let reportDate = new Date();
-    const rawDate = formData.get("reportDate");
-    if (rawDate) {
-      const parsedDate = new Date(rawDate);
-      if (!isNaN(parsedDate.getTime())) {
-        reportDate = parsedDate;
-      }
-    }
+    const requestedType = formData.get("reportType");
+    const reportType = detectReportType(parsedTests, requestedType);
 
     const report = await prisma.report.create({
       data: {
         patientName: formData.get("patientName") || "Self",
-        reportType: formData.get("reportType") || "Unknown",
-        labName: formData.get("labName") || null,
+        reportType,
+        labName,
         reportDate,
         rawText: extraction.text,
         tests: { create: parsedTests },

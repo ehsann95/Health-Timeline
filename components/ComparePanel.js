@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { LineChart, Line, XAxis, YAxis, Tooltip, ResponsiveContainer, ReferenceArea, ReferenceDot, CartesianGrid } from "recharts";
 
 const DIRECTION_BADGE = {
@@ -79,6 +79,18 @@ export default function ComparePanel({ testNames = [], reports = [] }) {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState(null);
 
+  const testCategoryMap = useMemo(() => {
+    const map = {};
+    for (const r of reports) {
+      for (const t of r.tests || []) {
+        if (t.name && t.category && t.category !== "Other") {
+          map[t.name] = t.category;
+        }
+      }
+    }
+    return map;
+  }, [reports]);
+
   useEffect(() => {
     if (!selected && testNames.length > 0) {
       setSelected(testNames[0]);
@@ -138,7 +150,11 @@ export default function ComparePanel({ testNames = [], reports = [] }) {
           className="border rounded-md px-3 py-1.5 text-sm"
         >
           <option value="">— pick a test —</option>
-          {testNames.map((n) => <option key={n} value={n}>{n}</option>)}
+          {testNames.map((n) => (
+            <option key={n} value={n}>
+              {n}{testCategoryMap[n] ? ` (${testCategoryMap[n]})` : ""}
+            </option>
+          ))}
         </select>
         {data && data.readings.length >= 1 && (
           <span className={`text-xs px-2.5 py-1 rounded-full font-medium ${badge.cls}`}>

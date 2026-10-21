@@ -11,6 +11,7 @@ export async function GET(request) {
     const q = searchParams.get("q")?.trim() || "";
     const flag = searchParams.get("flag") || "";       // "" | HIGH | LOW | ABNORMAL | NORMAL
     const reportType = searchParams.get("reportType") || "";
+    const lab = searchParams.get("lab")?.trim() || searchParams.get("labName")?.trim() || "";
     const from = searchParams.get("from");
     const to = searchParams.get("to");
 
@@ -24,8 +25,16 @@ export async function GET(request) {
       summary: buildSummary(r.tests),
     }));
     if (reportType) {
+      const needle = reportType.toLowerCase();
       filtered = filtered.filter((r) =>
-        r.reportType.toLowerCase().includes(reportType.toLowerCase())
+        r.reportType.toLowerCase().includes(needle) ||
+        r.tests.some((t) => (t.category || "").toLowerCase() === needle)
+      );
+    }
+    if (lab) {
+      const labNeedle = lab.toLowerCase();
+      filtered = filtered.filter((r) =>
+        (r.labName || "").toLowerCase().includes(labNeedle)
       );
     }
     if (from) {
