@@ -291,7 +291,7 @@ export default function UploadPanel({ onUploaded }) {
 
           <div className="text-sm block">
             <span className="block mb-1 font-medium text-slate-700">Patient / Family Member</span>
-            <div className="flex gap-2">
+            <div className="flex flex-col sm:flex-row gap-2">
               <select
                 value={allMembers && allMembers.includes(patientName) ? patientName : "custom"}
                 onChange={(e) => {
@@ -301,7 +301,7 @@ export default function UploadPanel({ onUploaded }) {
                     setPatientName(e.target.value);
                   }
                 }}
-                className="w-1/2 border border-slate-300 rounded-lg px-3 py-2 text-sm bg-white focus:outline-none focus:ring-2 focus:ring-blue-500"
+                className="w-full sm:w-1/2 border border-slate-300 rounded-lg px-3 py-2 text-sm bg-white focus:outline-none focus:ring-2 focus:ring-blue-500"
               >
                 {(allMembers || ["Self"]).map((m) => (
                   <option key={m} value={m}>
@@ -317,8 +317,8 @@ export default function UploadPanel({ onUploaded }) {
               <input
                 value={patientName}
                 onChange={(e) => setPatientName(e.target.value)}
-                className="w-1/2 border border-slate-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
-                placeholder="Name or Relation"
+                className="w-full sm:w-1/2 border border-slate-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+                placeholder="Name or Relation (e.g. Dad)"
               />
             </div>
           </div>

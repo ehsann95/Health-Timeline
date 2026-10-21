@@ -163,32 +163,32 @@ export default function ReportCard({ report, onSaved, onDeleted }) {
   }
 
   return (
-    <div className="bg-white rounded-xl shadow overflow-hidden">
+    <div className="bg-white rounded-xl shadow-sm border border-slate-200 overflow-hidden">
       <button
         onClick={() => setOpen(!open)}
-        className="w-full flex items-center justify-between px-5 py-4 text-left hover:bg-slate-50 transition-colors"
+        className="w-full flex flex-col sm:flex-row sm:items-center justify-between p-4 sm:p-5 text-left hover:bg-slate-50 transition-colors gap-3"
       >
         <div className="flex flex-wrap items-center gap-2">
-          <span className="font-semibold text-base text-slate-900">{report.reportType}</span>
-          <span className="text-slate-500 text-sm">
+          <span className="font-bold text-base text-slate-900">{report.reportType}</span>
+          <span className="text-slate-500 text-xs sm:text-sm">
             📅 {fmtDate(report.reportDate)}
           </span>
           {report.labName && (
-            <span className="text-xs px-2 py-0.5 rounded-md bg-blue-50 text-blue-700 font-medium border border-blue-200">
+            <span className="text-[11px] sm:text-xs px-2 py-0.5 rounded-md bg-blue-50 text-blue-700 font-medium border border-blue-200 truncate max-w-[160px] sm:max-w-none">
               🏥 {report.labName}
             </span>
           )}
           {report.patientName && report.patientName !== "Self" && (
-            <span className="text-xs px-2 py-0.5 rounded-md bg-purple-50 text-purple-700 font-medium border border-purple-200">
+            <span className="text-[11px] sm:text-xs px-2 py-0.5 rounded-md bg-purple-50 text-purple-700 font-medium border border-purple-200">
               👤 {report.patientName}
             </span>
           )}
           {categories.length > 1 && (
-            <div className="flex flex-wrap gap-1 ml-1">
+            <div className="flex flex-wrap gap-1 ml-0 sm:ml-1">
               {categories.map((c) => (
                 <span
                   key={c}
-                  className="text-xs px-2 py-0.5 rounded-md bg-slate-100 text-slate-700 font-medium border border-slate-200"
+                  className="text-[10px] sm:text-xs px-1.5 sm:px-2 py-0.5 rounded-md bg-slate-100 text-slate-700 font-medium border border-slate-200"
                 >
                   {CATEGORY_META[c]?.icon || "📋"} {c}
                 </span>
@@ -196,10 +196,10 @@ export default function ReportCard({ report, onSaved, onDeleted }) {
             </div>
           )}
         </div>
-        <div className="flex items-center gap-2">
-          <span className="text-sm text-slate-500">{report.tests.length} tests</span>
+        <div className="flex items-center justify-between sm:justify-end w-full sm:w-auto gap-2 border-t sm:border-t-0 pt-2 sm:pt-0 border-slate-100">
+          <span className="text-xs sm:text-sm text-slate-500">{report.tests.length} tests</span>
           {abnormal.length > 0 && (
-            <span className="text-xs px-2.5 py-0.5 rounded-full bg-red-100 text-red-700 font-medium">
+            <span className="text-[11px] sm:text-xs px-2.5 py-0.5 rounded-full bg-red-100 text-red-700 font-bold">
               {abnormal.length} abnormal
             </span>
           )}
@@ -208,11 +208,11 @@ export default function ReportCard({ report, onSaved, onDeleted }) {
       </button>
 
       {open && (
-        <div className="border-t px-5 py-4 space-y-5">
+        <div className="border-t px-4 sm:px-5 py-4 space-y-5">
           {/* Tests table: grouped by category if multi-panel, otherwise single table */}
           {categories.length <= 1 ? (
-            <div className="overflow-x-auto">
-              <table className="w-full text-sm">
+            <div className="overflow-x-auto -mx-1 px-1">
+              <table className="w-full text-sm min-w-[480px]">
                 <thead>
                   <tr className="text-left text-slate-500 border-b">
                     <th className="py-2 pr-4 font-medium">Test</th>
@@ -259,8 +259,8 @@ export default function ReportCard({ report, onSaved, onDeleted }) {
                         <span className="text-xs text-green-700 font-medium">All normal ✓</span>
                       )}
                     </div>
-                    <div className="overflow-x-auto px-3.5 py-1">
-                      <table className="w-full text-sm">
+                    <div className="overflow-x-auto -mx-1 px-1 py-1">
+                      <table className="w-full text-sm min-w-[480px]">
                         <thead>
                           <tr className="text-left text-slate-400 text-xs border-b">
                             <th className="py-2 pr-4 font-medium">Test</th>

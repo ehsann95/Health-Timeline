@@ -128,24 +128,24 @@ export default function Home() {
             Review, filter, and track biomarkers across all your lab visits.
           </p>
         </div>
-        <div className="flex items-center gap-2">
+        <div className="flex flex-wrap items-center gap-2 w-full sm:w-auto">
           <button
             onClick={() => setDoctorSummaryOpen(true)}
-            className="inline-flex items-center gap-1.5 bg-emerald-600 hover:bg-emerald-700 text-white font-medium text-sm px-3.5 py-2 rounded-lg transition-colors shadow-sm"
-            title="Generate a 1-page clinical briefing for your doctor consultation"
+            className="flex-1 sm:flex-initial inline-flex items-center justify-center gap-1.5 bg-emerald-600 hover:bg-emerald-700 text-white font-medium text-xs sm:text-sm px-3.5 py-2 rounded-lg transition-colors shadow-xs"
+            title="Generate a multi-page clinical briefing for your doctor consultation"
           >
             <span>🩺</span>
             <span>Doctor Summary</span>
           </button>
           <Link
             href="/upload"
-            className="inline-flex items-center gap-2 bg-blue-600 hover:bg-blue-700 text-white font-medium text-sm px-4 py-2 rounded-lg transition-colors shadow-sm"
+            className="flex-1 sm:flex-initial inline-flex items-center justify-center gap-1.5 bg-blue-600 hover:bg-blue-700 text-white font-medium text-xs sm:text-sm px-3.5 py-2 rounded-lg transition-colors shadow-xs"
           >
-            <span>+ Upload Report</span>
+            <span>+ Upload</span>
           </Link>
           <Link
             href="/compare"
-            className="inline-flex items-center gap-1.5 bg-white border border-slate-200 hover:bg-slate-50 text-slate-700 font-medium text-sm px-3.5 py-2 rounded-lg transition-colors shadow-sm"
+            className="flex-1 sm:flex-initial inline-flex items-center justify-center gap-1.5 bg-white border border-slate-200 hover:bg-slate-50 text-slate-700 font-medium text-xs sm:text-sm px-3.5 py-2 rounded-lg transition-colors shadow-xs"
           >
             <span>📈 Compare</span>
           </Link>

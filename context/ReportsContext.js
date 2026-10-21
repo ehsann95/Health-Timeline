@@ -137,20 +137,26 @@ export function ReportsProvider({ children }) {
   }, [reports]);
 
   const resetToDemo = useCallback(async () => {
-    if (!confirm("Reset to sample demo data? Any custom uploaded reports will be replaced.")) return;
+    if (!confirm("Reset to sample demo data? All custom uploaded reports will be replaced with initial sample data.")) return;
     setLoading(true);
     try {
       localStorage.removeItem(STORAGE_KEY);
-      const res = await fetch("/api/reports");
+      const res = await fetch("/api/reports/reset", { method: "POST" });
       const data = await res.json();
       if (data.reports && Array.isArray(data.reports)) {
         setReports(data.reports);
         try {
           localStorage.setItem(STORAGE_KEY, JSON.stringify(data.reports));
         } catch {}
+      } else {
+        // Fallback fetch
+        const fallbackRes = await fetch("/api/reports");
+        const fallbackData = await fallbackRes.json();
+        if (fallbackData.reports) setReports(fallbackData.reports);
       }
     } catch (e) {
       console.error("Failed to reset demo reports:", e);
+      alert("Reset error: " + e.message);
     } finally {
       setLoading(false);
     }
