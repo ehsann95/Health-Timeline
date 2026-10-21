@@ -35,9 +35,9 @@ export default function ComparePage() {
           </p>
         </div>
 
-        <div className="flex items-center gap-2">
+        <div className="flex flex-wrap items-center gap-2 w-full sm:w-auto">
           {allMembers.length > 1 && (
-            <div className="flex items-center gap-1.5 bg-white border border-slate-200 px-3 py-1.5 rounded-lg text-sm shadow-sm">
+            <div className="flex-1 sm:flex-initial flex items-center justify-between sm:justify-start gap-1.5 bg-white border border-slate-200 px-3 py-1.5 rounded-lg text-sm shadow-xs">
               <span className="text-slate-500 text-xs font-medium">Viewing:</span>
               <select
                 value={selectedMember}
@@ -55,9 +55,9 @@ export default function ComparePage() {
           )}
           <Link
             href="/upload"
-            className="inline-flex items-center gap-1.5 bg-blue-600 hover:bg-blue-700 text-white font-medium text-sm px-4 py-2 rounded-lg transition-colors shadow-sm"
+            className="flex-1 sm:flex-initial inline-flex items-center justify-center gap-1.5 bg-blue-600 hover:bg-blue-700 text-white font-medium text-sm px-4 py-2 rounded-lg transition-colors shadow-xs"
           >
-            <span>+ Upload Report</span>
+            <span>+ Upload</span>
           </Link>
         </div>
       </div>

@@ -13,41 +13,82 @@ export default function Navbar() {
 
   const navLinks = [
     { href: "/", label: "Timeline", icon: "📋", count: reports.length },
-    { href: "/upload", label: "Upload Report", icon: "📤" },
-    { href: "/compare", label: "Compare Trends", icon: "📈" },
+    { href: "/upload", label: "Upload", icon: "📤" },
+    { href: "/compare", label: "Compare", icon: "📈" },
   ];
 
   return (
     <>
       <header className="bg-white border-b border-slate-200 sticky top-0 z-30 shadow-sm print:hidden">
-        <div className="max-w-5xl mx-auto px-4 py-3 flex flex-wrap items-center justify-between gap-3">
-          <div className="flex items-center gap-3">
+        <div className="max-w-5xl mx-auto px-3 sm:px-4 py-2.5 sm:py-3 flex flex-wrap items-center justify-between gap-2.5">
+          {/* Logo & Brand */}
+          <div className="flex items-center gap-2">
             <Link href="/" className="flex items-center gap-2 group">
-              <span className="text-2xl p-1 bg-blue-50 rounded-lg group-hover:bg-blue-100 transition-colors">
+              <span className="text-xl sm:text-2xl p-1 bg-blue-50 rounded-lg group-hover:bg-blue-100 transition-colors">
                 🧪
               </span>
               <div>
-                <span className="font-bold text-lg text-slate-900 group-hover:text-blue-600 transition-colors">
+                <span className="font-bold text-base sm:text-lg text-slate-900 group-hover:text-blue-600 transition-colors">
                   Health Timeline
                 </span>
-                <p className="text-xs text-slate-500 hidden sm:block">
+                <p className="text-[11px] text-slate-500 hidden md:block">
                   Smart biomarker tracking &amp; report comparison
                 </p>
               </div>
             </Link>
           </div>
 
-          {/* Navigation Tabs */}
-          <nav className="flex items-center gap-1.5 bg-slate-100/80 p-1 rounded-xl">
+          {/* User Auth & Reset Action */}
+          <div className="flex items-center gap-2 order-2 sm:order-3">
+            {user ? (
+              <div className="flex items-center gap-1.5 bg-slate-50 border border-slate-200 py-1 px-2 rounded-xl text-xs">
+                <span className="w-5 h-5 rounded-full bg-blue-600 text-white flex items-center justify-center font-bold text-[10px]">
+                  {user.name ? user.name[0].toUpperCase() : "U"}
+                </span>
+                <span className="font-semibold text-slate-800 max-w-[80px] sm:max-w-[110px] truncate" title={user.email}>
+                  {user.name || user.email.split("@")[0]}
+                </span>
+                <span className="text-[10px] bg-emerald-100 text-emerald-800 font-bold px-1.5 py-0.5 rounded-full hidden xs:inline-block">
+                  ☁️
+                </span>
+                <button
+                  onClick={signOut}
+                  className="text-slate-400 hover:text-red-600 ml-0.5 font-semibold p-0.5"
+                  title="Sign out"
+                >
+                  ✕
+                </button>
+              </div>
+            ) : (
+              <button
+                onClick={openAuthModal}
+                className="inline-flex items-center gap-1 bg-blue-50 hover:bg-blue-100 text-blue-700 border border-blue-200 px-2.5 py-1.5 rounded-xl text-xs font-semibold transition-colors shadow-xs"
+              >
+                <span>☁️</span>
+                <span className="hidden xs:inline">Sign In / </span>Sync
+              </button>
+            )}
+
+            <button
+              onClick={resetToDemo}
+              className="text-xs text-slate-500 hover:text-slate-900 px-2 py-1.5 rounded-lg border border-transparent hover:border-slate-200 hover:bg-slate-50 transition-colors"
+              title="Reset database back to initial sample reports"
+            >
+              🔄 <span className="hidden sm:inline">Reset</span>
+            </button>
+          </div>
+
+          {/* Navigation Tabs (Full width on mobile, inline on tablet/desktop) */}
+          <nav className="w-full sm:w-auto order-3 sm:order-2 flex items-center justify-around sm:justify-start gap-1 bg-slate-100/90 p-1 rounded-xl">
             {navLinks.map((item) => {
               const isActive = pathname === item.href;
               return (
                 <Link
                   key={item.href}
                   href={item.href}
-                  className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-sm font-medium transition-all ${
+                  className={`flex-1 sm:flex-initial flex items-center justify-center gap-1.5 px-3 py-1.5 rounded-lg text-xs sm:text-sm font-medium transition-all ${
                     isActive
-                      ? "bg-white text-blue-600 shadow-sm"
+                      ? "bg-white text-blue-600 shadow-xs font-semibold"
                       : "text-slate-600 hover:text-slate-900 hover:bg-white/50"
                   }`}
                 >
@@ -55,7 +96,7 @@ export default function Navbar() {
                   <span>{item.label}</span>
                   {item.count != null && !loading && (
                     <span
-                      className={`ml-1 text-xs px-1.5 py-0.2 rounded-full ${
+                      className={`ml-0.5 text-[10px] px-1.5 py-0.2 rounded-full font-bold ${
                         isActive ? "bg-blue-100 text-blue-700" : "bg-slate-200 text-slate-600"
                       }`}
                     >
@@ -66,46 +107,6 @@ export default function Navbar() {
               );
             })}
           </nav>
-
-          {/* User Auth & Actions */}
-          <div className="flex items-center gap-2.5">
-            {user ? (
-              <div className="flex items-center gap-2 bg-slate-50 border border-slate-200 py-1 px-2.5 rounded-xl text-xs">
-                <span className="w-5 h-5 rounded-full bg-blue-600 text-white flex items-center justify-center font-bold text-[10px]">
-                  {user.name ? user.name[0].toUpperCase() : "U"}
-                </span>
-                <span className="font-semibold text-slate-800 max-w-[100px] truncate" title={user.email}>
-                  {user.name || user.email.split("@")[0]}
-                </span>
-                <span className="text-[10px] bg-emerald-100 text-emerald-800 font-bold px-1.5 py-0.5 rounded-full">
-                  ☁️ Synced
-                </span>
-                <button
-                  onClick={signOut}
-                  className="text-slate-400 hover:text-red-600 ml-1 font-semibold"
-                  title="Sign out"
-                >
-                  ✕
-                </button>
-              </div>
-            ) : (
-              <button
-                onClick={openAuthModal}
-                className="inline-flex items-center gap-1.5 bg-blue-50 hover:bg-blue-100 text-blue-700 border border-blue-200 px-3 py-1.5 rounded-xl text-xs font-semibold transition-colors"
-              >
-                <span>☁️</span>
-                <span>Sign In / Sync</span>
-              </button>
-            )}
-
-            <button
-              onClick={resetToDemo}
-              className="text-xs text-slate-400 hover:text-slate-700 px-2 py-1 rounded hover:bg-slate-100 transition-colors"
-              title="Reload sample demo reports"
-            >
-              Reset
-            </button>
-          </div>
         </div>
       </header>
 
