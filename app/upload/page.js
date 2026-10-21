@@ -30,20 +30,20 @@ export default function UploadPage() {
         </div>
         <div className="bg-white rounded-lg p-3.5 border border-slate-200 space-y-1">
           <p className="font-semibold text-slate-700 flex items-center gap-1.5">
-            <span>✏️</span>
-            <span>Instant Inline Editing</span>
+            <span>👨‍👩‍👧</span>
+            <span>Family Profiles</span>
           </p>
           <p>
-            You can verify and edit any parsed value, reference range, or units directly on the report card anytime.
+            Track reports separately for Dad, Mom, Spouse, or Child without mixing clinical biomarker trends.
           </p>
         </div>
         <div className="bg-white rounded-lg p-3.5 border border-slate-200 space-y-1">
           <p className="font-semibold text-slate-700 flex items-center gap-1.5">
-            <span>🔒</span>
-            <span>Private &amp; Secure</span>
+            <span>📱</span>
+            <span>Clinic &amp; Cloud Ready</span>
           </p>
           <p>
-            Your laboratory records remain in your private local storage, giving you full control over your personal health timeline.
+            Sign in to access your reports from your phone at the clinic, or continue as guest with private local storage.
           </p>
         </div>
       </div>

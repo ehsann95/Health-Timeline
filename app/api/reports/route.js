@@ -1,21 +1,36 @@
 import { NextResponse } from "next/server";
 import { buildSummary } from "@/lib/extractor";
 import { getPrisma } from "@/lib/prisma";
+import { getSessionFromRequest } from "@/lib/auth";
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
 export async function GET(request) {
   try {
     const prisma = await getPrisma();
+    const sessionUser = getSessionFromRequest(request);
     const { searchParams } = new URL(request.url);
     const q = searchParams.get("q")?.trim() || "";
     const flag = searchParams.get("flag") || "";       // "" | HIGH | LOW | ABNORMAL | NORMAL
     const reportType = searchParams.get("reportType") || "";
     const lab = searchParams.get("lab")?.trim() || searchParams.get("labName")?.trim() || "";
+    const patient = searchParams.get("patient")?.trim() || "";
     const from = searchParams.get("from");
     const to = searchParams.get("to");
 
+    let whereClause = {};
+    if (sessionUser) {
+      whereClause = {
+        OR: [
+          { userId: sessionUser.id },
+          { userEmail: sessionUser.email },
+          { userId: null },
+        ],
+      };
+    }
+
     const reports = await prisma.report.findMany({
+      where: whereClause,
       include: { tests: true },
       orderBy: { reportDate: "desc" },
     });
@@ -35,6 +50,12 @@ export async function GET(request) {
       const labNeedle = lab.toLowerCase();
       filtered = filtered.filter((r) =>
         (r.labName || "").toLowerCase().includes(labNeedle)
+      );
+    }
+    if (patient) {
+      const patNeedle = patient.toLowerCase();
+      filtered = filtered.filter((r) =>
+        (r.patientName || "Self").toLowerCase().includes(patNeedle)
       );
     }
     if (from) {

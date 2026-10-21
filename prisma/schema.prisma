@@ -9,6 +9,8 @@ datasource db {
 
 model Report {
   id          String     @id @default(cuid())
+  userId      String?
+  userEmail   String?
   patientName String     @default("Self")
   reportType  String
   labName     String?
@@ -16,6 +18,29 @@ model Report {
   rawText     String?
   createdAt   DateTime   @default(now())
   tests       Test[]
+
+  @@index([userId])
+}
+
+model User {
+  id        String   @id @default(cuid())
+  email     String   @unique
+  name      String?
+  image     String?
+  createdAt DateTime @default(now())
+}
+
+model FamilyMember {
+  id         String    @id @default(cuid())
+  userId     String?
+  name       String
+  relation   String    @default("Self") // Self, Father, Mother, Spouse, Child, Other
+  gender     String?   // Male, Female, Other
+  birthDate  DateTime?
+  bloodGroup String?
+  createdAt  DateTime  @default(now())
+
+  @@index([userId])
 }
 
 model Test {

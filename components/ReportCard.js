@@ -178,6 +178,11 @@ export default function ReportCard({ report, onSaved, onDeleted }) {
               🏥 {report.labName}
             </span>
           )}
+          {report.patientName && report.patientName !== "Self" && (
+            <span className="text-xs px-2 py-0.5 rounded-md bg-purple-50 text-purple-700 font-medium border border-purple-200">
+              👤 {report.patientName}
+            </span>
+          )}
           {categories.length > 1 && (
             <div className="flex flex-wrap gap-1 ml-1">
               {categories.map((c) => (
