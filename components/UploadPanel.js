@@ -5,7 +5,7 @@ import Link from "next/link";
 import { useReports } from "@/context/ReportsContext";
 
 export default function UploadPanel({ onUploaded }) {
-  const { addReport } = useReports();
+  const { addReport, allMembers } = useReports();
   const [file, setFile] = useState(null);
   const [dragOver, setDragOver] = useState(false);
   const [reportType, setReportType] = useState("Auto-Detect");
@@ -289,15 +289,39 @@ export default function UploadPanel({ onUploaded }) {
             </span>
           </label>
 
-          <label className="text-sm block">
-            <span className="block mb-1 font-medium text-slate-700">Patient Name</span>
-            <input
-              value={patientName}
-              onChange={(e) => setPatientName(e.target.value)}
-              className="w-full border border-slate-300 rounded-lg px-3.5 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
-              placeholder="Self"
-            />
-          </label>
+          <div className="text-sm block">
+            <span className="block mb-1 font-medium text-slate-700">Patient / Family Member</span>
+            <div className="flex gap-2">
+              <select
+                value={allMembers && allMembers.includes(patientName) ? patientName : "custom"}
+                onChange={(e) => {
+                  if (e.target.value === "custom") {
+                    setPatientName("");
+                  } else {
+                    setPatientName(e.target.value);
+                  }
+                }}
+                className="w-1/2 border border-slate-300 rounded-lg px-3 py-2 text-sm bg-white focus:outline-none focus:ring-2 focus:ring-blue-500"
+              >
+                {(allMembers || ["Self"]).map((m) => (
+                  <option key={m} value={m}>
+                    👤 {m}
+                  </option>
+                ))}
+                {!allMembers?.includes("Father") && <option value="Father">👨 Father</option>}
+                {!allMembers?.includes("Mother") && <option value="Mother">👩 Mother</option>}
+                {!allMembers?.includes("Spouse") && <option value="Spouse">💍 Spouse</option>}
+                {!allMembers?.includes("Child") && <option value="Child">👶 Child</option>}
+                <option value="custom">+ Other / Custom…</option>
+              </select>
+              <input
+                value={patientName}
+                onChange={(e) => setPatientName(e.target.value)}
+                className="w-1/2 border border-slate-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+                placeholder="Name or Relation"
+              />
+            </div>
+          </div>
         </div>
 
         {/* Submit Actions */}

@@ -1,11 +1,22 @@
 "use client";
 
+import { useMemo, useState } from "react";
 import Link from "next/link";
 import ComparePanel from "@/components/ComparePanel";
 import { useReports } from "@/context/ReportsContext";
 
 export default function ComparePage() {
-  const { reports, allTestNames, loading } = useReports();
+  const { reports, allMembers, loading } = useReports();
+  const [selectedMember, setSelectedMember] = useState("All");
+
+  const memberReports = useMemo(() => {
+    if (selectedMember === "All") return reports;
+    return reports.filter((r) => (r.patientName || "Self").toLowerCase() === selectedMember.toLowerCase());
+  }, [reports, selectedMember]);
+
+  const memberTestNames = useMemo(() => {
+    return [...new Set(memberReports.flatMap((r) => (r.tests || []).map((t) => t.name)))].filter(Boolean).sort();
+  }, [memberReports]);
 
   return (
     <div className="space-y-6">
@@ -24,19 +35,38 @@ export default function ComparePage() {
           </p>
         </div>
 
-        <Link
-          href="/upload"
-          className="inline-flex items-center gap-1.5 bg-blue-600 hover:bg-blue-700 text-white font-medium text-sm px-4 py-2 rounded-lg transition-colors shadow-sm"
-        >
-          <span>+ Upload Report</span>
-        </Link>
+        <div className="flex items-center gap-2">
+          {allMembers.length > 1 && (
+            <div className="flex items-center gap-1.5 bg-white border border-slate-200 px-3 py-1.5 rounded-lg text-sm shadow-sm">
+              <span className="text-slate-500 text-xs font-medium">Viewing:</span>
+              <select
+                value={selectedMember}
+                onChange={(e) => setSelectedMember(e.target.value)}
+                className="bg-transparent font-semibold text-slate-800 text-sm focus:outline-none"
+              >
+                <option value="All">All Family</option>
+                {allMembers.map((m) => (
+                  <option key={m} value={m}>
+                    👤 {m}
+                  </option>
+                ))}
+              </select>
+            </div>
+          )}
+          <Link
+            href="/upload"
+            className="inline-flex items-center gap-1.5 bg-blue-600 hover:bg-blue-700 text-white font-medium text-sm px-4 py-2 rounded-lg transition-colors shadow-sm"
+          >
+            <span>+ Upload Report</span>
+          </Link>
+        </div>
       </div>
 
       {loading ? (
         <div className="bg-white rounded-xl shadow-sm border border-slate-200 p-12 text-center text-slate-500">
           Loading comparison data…
         </div>
-      ) : reports.length === 0 ? (
+      ) : memberReports.length === 0 ? (
         <div className="bg-white rounded-xl shadow-sm border border-slate-200 p-12 text-center space-y-4">
           <div className="text-4xl">📈</div>
           <h3 className="text-lg font-bold text-slate-800">No lab reports available to compare</h3>
@@ -53,9 +83,8 @@ export default function ComparePage() {
           </div>
         </div>
       ) : (
-        <ComparePanel testNames={allTestNames} reports={reports} />
+        <ComparePanel testNames={memberTestNames} reports={memberReports} />
       )}
     </div>
   );
 }
-

@@ -9,9 +9,11 @@ const ReportsContext = createContext({
   loading: true,
   allTestNames: [],
   allLabNames: [],
+  allMembers: [],
   addReport: () => {},
   updateReport: () => {},
   deleteReport: () => {},
+  claimLocalReports: async () => {},
   resetToDemo: async () => {},
   refreshReports: async () => {},
 });
@@ -29,6 +31,25 @@ export function ReportsProvider({ children }) {
         if (Array.isArray(parsed) && parsed.length > 0) {
           setReports(parsed);
           setLoading(false);
+          // Background sync with API
+          fetch("/api/reports")
+            .then((res) => res.json())
+            .then((data) => {
+              if (data.reports && Array.isArray(data.reports)) {
+                setReports((prev) => {
+                  const map = new Map(data.reports.map((r) => [r.id, r]));
+                  for (const r of prev) {
+                    if (!map.has(r.id)) map.set(r.id, r);
+                  }
+                  const merged = Array.from(map.values());
+                  try {
+                    localStorage.setItem(STORAGE_KEY, JSON.stringify(merged));
+                  } catch {}
+                  return merged;
+                });
+              }
+            })
+            .catch(() => {});
           return;
         }
       }
@@ -96,6 +117,25 @@ export function ReportsProvider({ children }) {
     });
   }, []);
 
+  // Claim any local guest reports and bind them to the logged-in user on the server
+  const claimLocalReports = useCallback(async () => {
+    if (reports.length === 0) return;
+    try {
+      const res = await fetch("/api/reports/claim", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ reports }),
+      });
+      const data = await res.json();
+      if (data.reports && Array.isArray(data.reports)) {
+        setReports(data.reports);
+        localStorage.setItem(STORAGE_KEY, JSON.stringify(data.reports));
+      }
+    } catch (e) {
+      console.warn("Claim local reports failed:", e);
+    }
+  }, [reports]);
+
   const resetToDemo = useCallback(async () => {
     if (!confirm("Reset to sample demo data? Any custom uploaded reports will be replaced.")) return;
     setLoading(true);
@@ -124,6 +164,12 @@ export function ReportsProvider({ children }) {
     return [...new Set(reports.map((r) => (r.labName || "").trim()).filter(Boolean))].sort();
   }, [reports]);
 
+  const allMembers = useMemo(() => {
+    const raw = [...new Set(reports.map((r) => (r.patientName || "Self").trim()).filter(Boolean))];
+    if (!raw.includes("Self")) raw.unshift("Self");
+    return raw.sort((a, b) => (a === "Self" ? -1 : b === "Self" ? 1 : a.localeCompare(b)));
+  }, [reports]);
+
   return (
     <ReportsContext.Provider
       value={{
@@ -131,9 +177,11 @@ export function ReportsProvider({ children }) {
         loading,
         allTestNames,
         allLabNames,
+        allMembers,
         addReport,
         updateReport,
         deleteReport,
+        claimLocalReports,
         resetToDemo,
         refreshReports: loadReports,
       }}
@@ -146,4 +194,3 @@ export function ReportsProvider({ children }) {
 export function useReports() {
   return useContext(ReportsContext);
 }
-

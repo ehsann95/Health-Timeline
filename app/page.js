@@ -3,10 +3,18 @@
 import { useMemo, useState } from "react";
 import Link from "next/link";
 import ReportCard from "@/components/ReportCard";
+import DoctorSummaryModal from "@/components/DoctorSummaryModal";
 import { useReports } from "@/context/ReportsContext";
 
-function applyFilters(reports, { q, flag, reportType, lab, from, to }) {
+function applyFilters(reports, { q, flag, reportType, lab, patient, from, to }) {
   let filtered = reports;
+
+  if (patient) {
+    const patNeedle = patient.toLowerCase();
+    filtered = filtered.filter((r) =>
+      (r.patientName || "Self").toLowerCase() === patNeedle
+    );
+  }
 
   if (lab) {
     const labNeedle = lab.toLowerCase();
@@ -68,31 +76,34 @@ function applyFilters(reports, { q, flag, reportType, lab, from, to }) {
 }
 
 export default function Home() {
-  const { reports, loading, allLabNames, updateReport, deleteReport } = useReports();
+  const { reports, loading, allLabNames, allMembers, updateReport, deleteReport } = useReports();
 
   // Filters state
   const [q, setQ] = useState("");
   const [flag, setFlag] = useState("");
   const [reportType, setReportType] = useState("");
   const [lab, setLab] = useState("");
+  const [patient, setPatient] = useState("");
   const [from, setFrom] = useState("");
   const [to, setTo] = useState("");
+  const [doctorSummaryOpen, setDoctorSummaryOpen] = useState(false);
 
-  const hasActiveFilters = Boolean(q || flag || reportType || lab || from || to);
+  const hasActiveFilters = Boolean(q || flag || reportType || lab || patient || from || to);
 
   function clearFilters() {
     setQ("");
     setFlag("");
     setReportType("");
     setLab("");
+    setPatient("");
     setFrom("");
     setTo("");
   }
 
   // Filtered reports
   const displayedReports = useMemo(() => {
-    return applyFilters(reports, { q, flag, reportType, lab, from, to });
-  }, [reports, q, flag, reportType, lab, from, to]);
+    return applyFilters(reports, { q, flag, reportType, lab, patient, from, to });
+  }, [reports, q, flag, reportType, lab, patient, from, to]);
 
   // Overall summary stats
   const summary = useMemo(() => {
@@ -118,6 +129,14 @@ export default function Home() {
           </p>
         </div>
         <div className="flex items-center gap-2">
+          <button
+            onClick={() => setDoctorSummaryOpen(true)}
+            className="inline-flex items-center gap-1.5 bg-emerald-600 hover:bg-emerald-700 text-white font-medium text-sm px-3.5 py-2 rounded-lg transition-colors shadow-sm"
+            title="Generate a 1-page clinical briefing for your doctor consultation"
+          >
+            <span>🩺</span>
+            <span>Doctor Summary</span>
+          </button>
           <Link
             href="/upload"
             className="inline-flex items-center gap-2 bg-blue-600 hover:bg-blue-700 text-white font-medium text-sm px-4 py-2 rounded-lg transition-colors shadow-sm"
@@ -158,17 +177,31 @@ export default function Home() {
 
       {/* Search & Filter Bar */}
       <div className="bg-white rounded-xl shadow-sm border border-slate-200 p-4 space-y-3">
-        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3">
+        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-3">
           {/* Keyword Search */}
           <div className="relative">
             <input
               value={q}
               onChange={(e) => setQ(e.target.value)}
-              placeholder="Search tests, labs, notes…"
+              placeholder="Search tests, notes…"
               className="w-full border border-slate-300 rounded-lg pl-8 pr-3 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
             />
             <span className="absolute left-2.5 top-2 text-slate-400 text-xs">🔍</span>
           </div>
+
+          {/* Family Member Filter */}
+          <select
+            value={patient}
+            onChange={(e) => setPatient(e.target.value)}
+            className="w-full border border-slate-300 rounded-lg px-3 py-1.5 text-sm bg-white focus:outline-none focus:ring-2 focus:ring-blue-500"
+          >
+            <option value="">All Family ({allMembers.length})</option>
+            {allMembers.map((name) => (
+              <option key={name} value={name}>
+                👤 {name}
+              </option>
+            ))}
+          </select>
 
           {/* Lab Filter */}
           <select
@@ -300,6 +333,12 @@ export default function Home() {
           ))}
         </div>
       )}
+
+      {/* Doctor Consultation Briefing Modal */}
+      <DoctorSummaryModal
+        isOpen={doctorSummaryOpen}
+        onClose={() => setDoctorSummaryOpen(false)}
+      />
     </div>
   );
 }

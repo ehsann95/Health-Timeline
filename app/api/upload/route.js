@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { extractText, parseTests, buildSummary, detectReportType } from "@/lib/extractor";
 import { getPrisma } from "@/lib/prisma";
+import { getSessionFromRequest } from "@/lib/auth";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -9,6 +10,7 @@ export const maxDuration = 60;
 export async function POST(request) {
   try {
     const prisma = await getPrisma();
+    const sessionUser = getSessionFromRequest(request);
     const formData = await request.formData();
     const file = formData.get("file");
     if (!file || typeof file === "string") {
@@ -51,6 +53,8 @@ export async function POST(request) {
 
     const report = await prisma.report.create({
       data: {
+        userId: sessionUser?.id || null,
+        userEmail: sessionUser?.email || null,
         patientName: formData.get("patientName") || "Self",
         reportType,
         labName,
