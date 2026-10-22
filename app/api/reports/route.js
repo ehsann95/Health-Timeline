@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 import { buildSummary } from "@/lib/extractor";
-import { getPrisma } from "@/lib/prisma";
+import { getPrisma, getSampleReports } from "@/lib/prisma";
 import { getSessionFromRequest } from "@/lib/auth";
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -24,9 +24,23 @@ export async function GET(request) {
         OR: [
           { userId: sessionUser.id },
           { userEmail: sessionUser.email },
-          { userId: null },
         ],
       };
+    } else {
+      whereClause = { userId: null };
+      const guestCount = await prisma.report.count({ where: whereClause });
+      if (guestCount === 0) {
+        for (const r of getSampleReports()) {
+          await prisma.report.create({
+            data: {
+              ...r,
+              userId: null,
+              userEmail: null,
+              tests: { create: r.tests },
+            },
+          });
+        }
+      }
     }
 
     const reports = await prisma.report.findMany({

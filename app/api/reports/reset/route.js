@@ -1,60 +1,50 @@
 import { NextResponse } from "next/server";
-import { getPrisma } from "@/lib/prisma";
+import { getPrisma, getSampleReports } from "@/lib/prisma";
 import { buildSummary } from "@/lib/extractor";
+import { getSessionFromRequest } from "@/lib/auth";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
-function getSampleReports() {
-  const daysAgo = (n) => new Date(Date.now() - n * 86400000);
-  return [
-    {
-      patientName: "Self",
-      reportType: "CBC",
-      labName: "CityLab Diagnostics",
-      reportDate: daysAgo(180),
-      tests: [
-        { name: "Hemoglobin", category: "CBC", value: 13.2, unit: "g/dL", refLow: 13, refHigh: 17, flag: "NORMAL" },
-        { name: "WBC", category: "CBC", value: 7200, unit: "/µL", refLow: 4000, refHigh: 11000, flag: "NORMAL" },
-        { name: "Platelets", category: "CBC", value: 145000, unit: "/µL", refLow: 150000, refHigh: 450000, flag: "LOW" },
-        { name: "RBC", category: "CBC", value: 4.4, unit: "mill/cumm", refLow: 4.5, refHigh: 5.5, flag: "LOW" },
-      ],
-    },
-    {
-      patientName: "Self",
-      reportType: "LFT",
-      labName: "CityLab Diagnostics",
-      reportDate: daysAgo(90),
-      tests: [
-        { name: "ALT (SGPT)", category: "LFT", value: 62, unit: "U/L", refLow: 7, refHigh: 56, flag: "HIGH" },
-        { name: "AST (SGOT)", category: "LFT", value: 48, unit: "U/L", refLow: 10, refHigh: 40, flag: "HIGH" },
-        { name: "Bilirubin Total", category: "LFT", value: 1.1, unit: "mg/dL", refLow: 0.3, refHigh: 1.2, flag: "NORMAL" },
-      ],
-    },
-    {
-      patientName: "Self",
-      reportType: "LFT + CBC",
-      labName: "Metro Health Labs",
-      reportDate: daysAgo(10),
-      tests: [
-        { name: "ALT (SGPT)", category: "LFT", value: 71, unit: "U/L", refLow: 7, refHigh: 56, flag: "HIGH" },
-        { name: "AST (SGOT)", category: "LFT", value: 39, unit: "U/L", refLow: 10, refHigh: 40, flag: "NORMAL" },
-        { name: "Bilirubin Total", category: "LFT", value: 0.9, unit: "mg/dL", refLow: 0.3, refHigh: 1.2, flag: "NORMAL" },
-        { name: "Hemoglobin", category: "CBC", value: 14.1, unit: "g/dL", refLow: 13, refHigh: 17, flag: "NORMAL" },
-      ],
-    },
-  ];
-}
-
-export async function POST() {
+export async function POST(request) {
   try {
     const prisma = await getPrisma();
+    const sessionUser = getSessionFromRequest(request);
 
-    // Clear existing tests and reports
-    await prisma.test.deleteMany();
-    await prisma.report.deleteMany();
+    let whereClause = {};
+    let userId = null;
+    let userEmail = null;
 
-    // Re-seed initial clean demo sample reports
+    if (sessionUser) {
+      whereClause = {
+        OR: [
+          { userId: sessionUser.id },
+          { userEmail: sessionUser.email },
+        ],
+      };
+      userId = sessionUser.id;
+      userEmail = sessionUser.email;
+    } else {
+      whereClause = { userId: null };
+    }
+
+    // Delete reports only for this user/guest scope
+    const existingReports = await prisma.report.findMany({
+      where: whereClause,
+      select: { id: true },
+    });
+    const ids = existingReports.map((r) => r.id);
+
+    if (ids.length > 0) {
+      await prisma.test.deleteMany({
+        where: { reportId: { in: ids } },
+      });
+      await prisma.report.deleteMany({
+        where: { id: { in: ids } },
+      });
+    }
+
+    // Re-seed clean demo sample reports for this user
     const samples = getSampleReports();
     const createdReports = [];
 
@@ -65,6 +55,8 @@ export async function POST() {
           reportType: r.reportType,
           labName: r.labName,
           reportDate: r.reportDate,
+          userId,
+          userEmail,
           tests: { create: r.tests },
         },
         include: { tests: true },
@@ -85,4 +77,3 @@ export async function POST() {
     return NextResponse.json({ error: e.message }, { status: 500 });
   }
 }
-

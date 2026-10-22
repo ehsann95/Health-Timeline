@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 import { getSessionFromRequest } from "@/lib/auth";
-import { getPrisma } from "@/lib/prisma";
+import { getPrisma, getSampleReports } from "@/lib/prisma";
 import { buildSummary } from "@/lib/extractor";
 
 export const runtime = "nodejs";
@@ -14,37 +14,71 @@ export async function POST(request) {
     }
 
     const prisma = await getPrisma();
-    const body = await request.json();
+    const body = await request.json().catch(() => ({}));
     const guestReports = Array.isArray(body.reports) ? body.reports : [];
 
-    const claimed = [];
+    // Fetch all current reports for this user
+    const userReportsWhere = {
+      OR: [
+        { userId: user.id },
+        { userEmail: user.email },
+      ],
+    };
+
+    const existingUserReports = await prisma.report.findMany({
+      where: userReportsWhere,
+      include: { tests: true },
+    });
+
+    const isDuplicate = (r) => {
+      return existingUserReports.some((e) => {
+        if (r.id && e.id === r.id) return true;
+        const sameType =
+          (e.reportType || "").trim().toLowerCase() ===
+          (r.reportType || "").trim().toLowerCase();
+        const sameLab =
+          (e.labName || "").trim().toLowerCase() ===
+          (r.labName || "").trim().toLowerCase();
+        const eDate = e.reportDate
+          ? new Date(e.reportDate).toISOString().slice(0, 10)
+          : "";
+        const rDate = r.reportDate
+          ? new Date(r.reportDate).toISOString().slice(0, 10)
+          : "";
+        const sameDate = eDate && rDate && eDate === rDate;
+        return sameType && sameLab && sameDate;
+      });
+    };
+
+    let claimedCount = 0;
 
     for (const r of guestReports) {
       if (!r || !r.reportType) continue;
 
-      // Check if report already exists in DB
-      let existing = null;
+      // Skip duplicates of existing user reports
+      if (isDuplicate(r)) {
+        continue;
+      }
+
+      // Check if report already exists in DB as an unassigned guest report
+      let existingInDb = null;
       if (r.id) {
-        existing = await prisma.report.findUnique({
+        existingInDb = await prisma.report.findUnique({
           where: { id: r.id },
           include: { tests: true },
         });
       }
 
-      if (existing) {
-        // Claim existing record
-        const updated = await prisma.report.update({
-          where: { id: existing.id },
+      if (existingInDb) {
+        // If it was unassigned (or belongs to no one else), claim it for this user
+        await prisma.report.update({
+          where: { id: existingInDb.id },
           data: {
             userId: user.id,
             userEmail: user.email,
           },
-          include: { tests: true },
         });
-        claimed.push({
-          ...updated,
-          summary: buildSummary(updated.tests || []),
-        });
+        claimedCount++;
       } else {
         // Create new record for this user
         const testsData = (r.tests || []).map((t) => ({
@@ -58,7 +92,7 @@ export async function POST(request) {
           verified: Boolean(t.verified),
         }));
 
-        const created = await prisma.report.create({
+        await prisma.report.create({
           data: {
             userId: user.id,
             userEmail: user.email,
@@ -69,23 +103,49 @@ export async function POST(request) {
             rawText: r.rawText || null,
             tests: { create: testsData },
           },
-          include: { tests: true },
         });
-        claimed.push({
-          ...created,
-          summary: buildSummary(created.tests || []),
-        });
+        claimedCount++;
       }
     }
 
+    // Refresh and fetch all reports for this user
+    let allUserReports = await prisma.report.findMany({
+      where: userReportsWhere,
+      include: { tests: true },
+      orderBy: { reportDate: "desc" },
+    });
+
+    // If user still has 0 reports (fresh account with no reports), seed standard demo reports
+    if (allUserReports.length === 0) {
+      for (const sample of getSampleReports()) {
+        await prisma.report.create({
+          data: {
+            ...sample,
+            userId: user.id,
+            userEmail: user.email,
+            tests: { create: sample.tests },
+          },
+        });
+      }
+      allUserReports = await prisma.report.findMany({
+        where: userReportsWhere,
+        include: { tests: true },
+        orderBy: { reportDate: "desc" },
+      });
+    }
+
+    const reportsWithSummary = allUserReports.map((r) => ({
+      ...r,
+      summary: buildSummary(r.tests || []),
+    }));
+
     return NextResponse.json({
       ok: true,
-      claimedCount: claimed.length,
-      reports: claimed,
+      claimedCount,
+      reports: reportsWithSummary,
     });
   } catch (err) {
     console.error("Failed to claim reports:", err);
     return NextResponse.json({ error: err.message }, { status: 500 });
   }
 }
-
