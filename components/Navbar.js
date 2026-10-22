@@ -8,7 +8,15 @@ import AuthModal from "@/components/AuthModal";
 
 export default function Navbar() {
   const pathname = usePathname();
-  const { reports, resetToDemo, loading, isSyncing, lastSynced, syncWithServer } = useReports();
+  const {
+    reports,
+    loading,
+    isSyncing,
+    lastSynced,
+    syncWithServer,
+    clearAllReports,
+    loadDemoReports,
+  } = useReports();
   const { user, isGuest, openAuthModal, signOut } = useAuth();
 
   const navLinks = [
@@ -38,7 +46,7 @@ export default function Navbar() {
             </Link>
           </div>
 
-          {/* User Auth, Sync & Reset Action */}
+          {/* User Auth, Sync & Data Actions */}
           <div className="flex items-center gap-1.5 sm:gap-2 order-2 sm:order-3">
             {user ? (
               <>
@@ -91,14 +99,24 @@ export default function Navbar() {
               </button>
             )}
 
-            {/* Reset Button */}
-            <button
-              onClick={resetToDemo}
-              className="text-xs text-slate-500 hover:text-slate-900 px-2 py-1.5 rounded-lg border border-transparent hover:border-slate-200 hover:bg-slate-50 transition-colors"
-              title="Reset database back to initial sample reports"
-            >
-              <span>🧹</span> <span className="hidden sm:inline">Reset</span>
-            </button>
+            {/* Clear All Data / Load Demo Action */}
+            {reports.length > 0 ? (
+              <button
+                onClick={clearAllReports}
+                className="text-xs text-slate-500 hover:text-red-600 px-2 py-1.5 rounded-lg border border-transparent hover:border-slate-200 hover:bg-red-50 transition-colors"
+                title="Clear all reports from database and browser"
+              >
+                <span>🗑️</span> <span className="hidden sm:inline">Clear</span>
+              </button>
+            ) : (
+              <button
+                onClick={loadDemoReports}
+                className="text-xs text-slate-500 hover:text-blue-600 px-2 py-1.5 rounded-lg border border-transparent hover:border-slate-200 hover:bg-blue-50 transition-colors"
+                title="Load sample demo data (CBC, LFT)"
+              >
+                <span>🧪</span> <span className="hidden sm:inline">Sample Data</span>
+              </button>
+            )}
           </div>
 
           {/* Navigation Tabs (Full width on mobile, inline on tablet/desktop) */}

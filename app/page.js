@@ -76,7 +76,7 @@ function applyFilters(reports, { q, flag, reportType, lab, patient, from, to }) 
 }
 
 export default function Home() {
-  const { reports, loading, allLabNames, allMembers, updateReport, deleteReport } = useReports();
+  const { reports, loading, allLabNames, allMembers, updateReport, deleteReport, loadDemoReports } = useReports();
 
   // Filters state
   const [q, setQ] = useState("");
@@ -298,13 +298,20 @@ export default function Home() {
           <p className="text-sm text-slate-500 max-w-md mx-auto">
             You haven&apos;t uploaded any laboratory test reports yet. Upload a PDF or photo of your lab report to extract and track biomarkers.
           </p>
-          <div>
+          <div className="flex flex-wrap items-center justify-center gap-3">
             <Link
               href="/upload"
               className="inline-flex items-center gap-2 bg-blue-600 hover:bg-blue-700 text-white px-5 py-2.5 rounded-lg text-sm font-medium transition-colors shadow-sm"
             >
               <span>+ Upload Your First Report</span>
             </Link>
+            <button
+              onClick={loadDemoReports}
+              className="inline-flex items-center gap-2 bg-slate-100 hover:bg-slate-200 text-slate-700 px-4 py-2.5 rounded-lg text-sm font-medium transition-colors border border-slate-200"
+              title="Populate 3 sample reports (CBC, LFT) to preview features"
+            >
+              <span>🧪 Load Sample Demo Data</span>
+            </button>
           </div>
         </div>
       ) : displayedReports.length === 0 ? (
