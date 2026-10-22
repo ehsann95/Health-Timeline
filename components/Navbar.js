@@ -8,7 +8,7 @@ import AuthModal from "@/components/AuthModal";
 
 export default function Navbar() {
   const pathname = usePathname();
-  const { reports, resetToDemo, loading } = useReports();
+  const { reports, resetToDemo, loading, isSyncing, lastSynced, syncWithServer } = useReports();
   const { user, isGuest, openAuthModal, signOut } = useAuth();
 
   const navLinks = [
@@ -38,43 +38,66 @@ export default function Navbar() {
             </Link>
           </div>
 
-          {/* User Auth & Reset Action */}
-          <div className="flex items-center gap-2 order-2 sm:order-3">
+          {/* User Auth, Sync & Reset Action */}
+          <div className="flex items-center gap-1.5 sm:gap-2 order-2 sm:order-3">
             {user ? (
-              <div className="flex items-center gap-1.5 bg-slate-50 border border-slate-200 py-1 px-2 rounded-xl text-xs">
-                <span className="w-5 h-5 rounded-full bg-blue-600 text-white flex items-center justify-center font-bold text-[10px]">
-                  {user.name ? user.name[0].toUpperCase() : "U"}
-                </span>
-                <span className="font-semibold text-slate-800 max-w-[80px] sm:max-w-[110px] truncate" title={user.email}>
-                  {user.name || user.email.split("@")[0]}
-                </span>
-                <span className="text-[10px] bg-emerald-100 text-emerald-800 font-bold px-1.5 py-0.5 rounded-full hidden xs:inline-block">
-                  ☁️
-                </span>
+              <>
+                <div className="flex items-center gap-1.5 bg-slate-50 border border-slate-200 py-1 px-2 rounded-xl text-xs">
+                  <span className="w-5 h-5 rounded-full bg-blue-600 text-white flex items-center justify-center font-bold text-[10px]">
+                    {user.name ? user.name[0].toUpperCase() : "U"}
+                  </span>
+                  <span
+                    className="font-semibold text-slate-800 max-w-[75px] sm:max-w-[110px] truncate"
+                    title={user.email}
+                  >
+                    {user.name || user.email.split("@")[0]}
+                  </span>
+                  <button
+                    onClick={signOut}
+                    className="text-slate-400 hover:text-red-600 ml-0.5 font-semibold p-0.5"
+                    title="Sign out"
+                  >
+                    ✕
+                  </button>
+                </div>
+
+                {/* Explicit Sync Button for Logged-In User */}
                 <button
-                  onClick={signOut}
-                  className="text-slate-400 hover:text-red-600 ml-0.5 font-semibold p-0.5"
-                  title="Sign out"
+                  onClick={() => syncWithServer()}
+                  disabled={isSyncing}
+                  className="inline-flex items-center gap-1 bg-white hover:bg-slate-50 text-slate-700 border border-slate-200 px-2 sm:px-2.5 py-1.5 rounded-xl text-xs font-semibold transition-all shadow-xs disabled:opacity-60"
+                  title={
+                    lastSynced
+                      ? `Last synced: ${new Date(lastSynced).toLocaleTimeString()} · Click to re-sync across devices`
+                      : "Click to sync reports with server"
+                  }
                 >
-                  ✕
+                  <span className={`text-xs ${isSyncing ? "animate-spin text-blue-600 inline-block" : ""}`}>
+                    🔄
+                  </span>
+                  <span className="hidden sm:inline">
+                    {isSyncing ? "Syncing…" : "Sync"}
+                  </span>
                 </button>
-              </div>
+              </>
             ) : (
               <button
                 onClick={openAuthModal}
                 className="inline-flex items-center gap-1 bg-blue-50 hover:bg-blue-100 text-blue-700 border border-blue-200 px-2.5 py-1.5 rounded-xl text-xs font-semibold transition-colors shadow-xs"
+                title="Sign in with Google or Demo Account to sync across laptop & phone"
               >
                 <span>☁️</span>
                 <span className="hidden xs:inline">Sign In / </span>Sync
               </button>
             )}
 
+            {/* Reset Button */}
             <button
               onClick={resetToDemo}
               className="text-xs text-slate-500 hover:text-slate-900 px-2 py-1.5 rounded-lg border border-transparent hover:border-slate-200 hover:bg-slate-50 transition-colors"
               title="Reset database back to initial sample reports"
             >
-              🔄 <span className="hidden sm:inline">Reset</span>
+              <span>🧹</span> <span className="hidden sm:inline">Reset</span>
             </button>
           </div>
 

@@ -26,17 +26,19 @@ export default function AuthModal() {
 
   async function handleDemoLogin(email, name) {
     setBusy(true);
+    setSyncMsg("Signing in to demo account…");
     try {
       await signInDemo(email, name);
       if (reports.length > 0) {
-        setSyncMsg(`Syncing ${reports.length} local reports to your account…`);
-        await claimLocalReports();
+        setSyncMsg(`Syncing ${reports.length} local report${reports.length > 1 ? "s" : ""} to your cloud account…`);
+        await claimLocalReports(reports);
       }
       closeAuthModal();
     } catch (e) {
       alert("Sign-in failed: " + e.message);
     } finally {
       setBusy(false);
+      setSyncMsg("");
     }
   }
 
@@ -72,6 +74,13 @@ export default function AuthModal() {
             <span>Cloud backup</span>
           </div>
         </div>
+
+        {busy && (
+          <div className="p-3 bg-blue-50 border border-blue-200 rounded-xl text-xs text-blue-700 flex items-center justify-center gap-2 animate-pulse">
+            <span className="animate-spin text-sm">🔄</span>
+            <span className="font-medium">{syncMsg || "Connecting and syncing…"}</span>
+          </div>
+        )}
 
         {/* Actions */}
         <div className="space-y-3 pt-2">

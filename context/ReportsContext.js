@@ -1,89 +1,209 @@
 "use client";
 
-import { createContext, useContext, useEffect, useMemo, useState, useCallback } from "react";
-
-const STORAGE_KEY = "health_timeline_reports_v1";
+import {
+  createContext,
+  useContext,
+  useEffect,
+  useMemo,
+  useState,
+  useCallback,
+  useRef,
+} from "react";
+import { useAuth } from "@/context/AuthContext";
 
 const ReportsContext = createContext({
   reports: [],
   loading: true,
+  isSyncing: false,
+  lastSynced: null,
   allTestNames: [],
   allLabNames: [],
   allMembers: [],
   addReport: () => {},
   updateReport: () => {},
-  deleteReport: () => {},
+  deleteReport: async () => {},
   claimLocalReports: async () => {},
   resetToDemo: async () => {},
+  syncWithServer: async () => {},
   refreshReports: async () => {},
 });
 
+function getStorageKey(user) {
+  if (user && user.email) {
+    const safeEmail = user.email.toLowerCase().replace(/[^a-z0-9]/g, "_");
+    return `health_timeline_reports_${safeEmail}`;
+  }
+  return "health_timeline_guest_reports";
+}
+
 export function ReportsProvider({ children }) {
+  const { user, loading: authLoading } = useAuth();
   const [reports, setReports] = useState([]);
   const [loading, setLoading] = useState(true);
+  const [isSyncing, setIsSyncing] = useState(false);
+  const [lastSynced, setLastSynced] = useState(null);
 
-  // Load initial reports from localStorage or fallback to /api/reports
-  const loadReports = useCallback(async () => {
+  // Keep a ref to current user to avoid race conditions during async transitions
+  const currentUserRef = useRef(user);
+  currentUserRef.current = user;
+
+  // Authoritative server fetch and sync
+  const syncWithServer = useCallback(async (opts = {}) => {
+    const silent = opts.silent ?? false;
+    if (!silent) setIsSyncing(true);
+
+    const currentUser = currentUserRef.current;
+    const targetKey = getStorageKey(currentUser);
+
     try {
-      const cached = localStorage.getItem(STORAGE_KEY);
+      const res = await fetch("/api/reports");
+      if (!res.ok) throw new Error(`HTTP error ${res.status}`);
+      const data = await res.json();
+
+      if (data.reports && Array.isArray(data.reports)) {
+        // Verify user hasn't switched during fetch
+        if (currentUserRef.current?.email === currentUser?.email) {
+          setReports(data.reports);
+          try {
+            localStorage.setItem(targetKey, JSON.stringify(data.reports));
+          } catch (e) {
+            console.warn("Failed to write to localStorage:", e);
+          }
+          setLastSynced(new Date());
+          return { ok: true, count: data.reports.length };
+        }
+      }
+    } catch (err) {
+      console.warn("Sync with server failed:", err);
+      return { ok: false, error: err.message };
+    } finally {
+      if (!silent) setIsSyncing(false);
+    }
+  }, []);
+
+  // Claim any guest reports found in localStorage and migrate them into the user account
+  const claimLocalReports = useCallback(async (explicitReports = null) => {
+    const currentUser = currentUserRef.current;
+    if (!currentUser) return;
+
+    let toClaim = explicitReports;
+    if (!toClaim || !Array.isArray(toClaim) || toClaim.length === 0) {
+      try {
+        const guestJson =
+          localStorage.getItem("health_timeline_guest_reports") ||
+          localStorage.getItem("health_timeline_reports_v1");
+        if (guestJson) {
+          const parsed = JSON.parse(guestJson);
+          if (Array.isArray(parsed) && parsed.length > 0) {
+            toClaim = parsed;
+          }
+        }
+      } catch (e) {
+        console.warn("Could not read guest reports for claiming:", e);
+      }
+    }
+
+    if (!toClaim || toClaim.length === 0) return;
+
+    try {
+      setIsSyncing(true);
+      const res = await fetch("/api/reports/claim", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ reports: toClaim }),
+      });
+      const data = await res.json();
+
+      if (data.reports && Array.isArray(data.reports)) {
+        const userKey = getStorageKey(currentUser);
+        setReports(data.reports);
+        try {
+          localStorage.setItem(userKey, JSON.stringify(data.reports));
+          // Clean up legacy guest keys once successfully claimed
+          localStorage.removeItem("health_timeline_guest_reports");
+          localStorage.removeItem("health_timeline_reports_v1");
+        } catch {}
+        setLastSynced(new Date());
+      }
+    } catch (e) {
+      console.warn("Error claiming guest reports:", e);
+    } finally {
+      setIsSyncing(false);
+    }
+  }, []);
+
+  // Main lifecycle: re-sync whenever user or auth loading state changes
+  useEffect(() => {
+    if (authLoading) return;
+
+    let isMounted = true;
+    const currentStorageKey = getStorageKey(user);
+
+    // 1. Instant local cache restore
+    try {
+      const cached = localStorage.getItem(currentStorageKey);
       if (cached) {
         const parsed = JSON.parse(cached);
         if (Array.isArray(parsed) && parsed.length > 0) {
           setReports(parsed);
           setLoading(false);
-          // Background sync with API
-          fetch("/api/reports")
-            .then((res) => res.json())
-            .then((data) => {
-              if (data.reports && Array.isArray(data.reports)) {
-                setReports((prev) => {
-                  const map = new Map(data.reports.map((r) => [r.id, r]));
-                  for (const r of prev) {
-                    if (!map.has(r.id)) map.set(r.id, r);
-                  }
-                  const merged = Array.from(map.values());
-                  try {
-                    localStorage.setItem(STORAGE_KEY, JSON.stringify(merged));
-                  } catch {}
-                  return merged;
-                });
-              }
-            })
-            .catch(() => {});
-          return;
         }
       }
     } catch (e) {
-      console.warn("Could not read from localStorage:", e);
+      console.warn("Could not read local cache:", e);
     }
 
-    try {
-      const res = await fetch("/api/reports");
-      const data = await res.json();
-      if (data.reports && Array.isArray(data.reports)) {
-        setReports(data.reports);
-        try {
-          localStorage.setItem(STORAGE_KEY, JSON.stringify(data.reports));
-        } catch {}
+    // 2. If logged in, claim any pending guest reports, then sync authoritative data
+    async function initUserReports() {
+      try {
+        if (user) {
+          // Check for pending guest data to claim
+          const guestCached =
+            localStorage.getItem("health_timeline_guest_reports") ||
+            localStorage.getItem("health_timeline_reports_v1");
+          if (guestCached) {
+            await claimLocalReports();
+          }
+        }
+        await syncWithServer({ silent: false });
+      } finally {
+        if (isMounted) setLoading(false);
       }
-    } catch (err) {
-      console.error("Failed to load initial reports:", err);
-    } finally {
-      setLoading(false);
     }
-  }, []);
 
+    initUserReports();
+
+    return () => {
+      isMounted = false;
+    };
+  }, [user, authLoading, claimLocalReports, syncWithServer]);
+
+  // Auto-sync on window focus / visibility change (cross-device & cross-tab detection)
   useEffect(() => {
-    loadReports();
-  }, [loadReports]);
+    function handleVisibilityOrFocus() {
+      if (document.visibilityState === "visible") {
+        syncWithServer({ silent: true });
+      }
+    }
 
+    window.addEventListener("focus", handleVisibilityOrFocus);
+    document.addEventListener("visibilitychange", handleVisibilityOrFocus);
+
+    return () => {
+      window.removeEventListener("focus", handleVisibilityOrFocus);
+      document.removeEventListener("visibilitychange", handleVisibilityOrFocus);
+    };
+  }, [syncWithServer]);
+
+  // Client mutations
   const addReport = useCallback((newReport) => {
     if (!newReport) return;
+    const currentStorageKey = getStorageKey(currentUserRef.current);
     setReports((prev) => {
       const filtered = prev.filter((r) => r.id !== newReport.id);
       const next = [newReport, ...filtered];
       try {
-        localStorage.setItem(STORAGE_KEY, JSON.stringify(next));
+        localStorage.setItem(currentStorageKey, JSON.stringify(next));
       } catch (e) {
         console.warn("Failed to persist uploaded report:", e);
       }
@@ -93,10 +213,11 @@ export function ReportsProvider({ children }) {
 
   const updateReport = useCallback((updatedReport) => {
     if (!updatedReport) return;
+    const currentStorageKey = getStorageKey(currentUserRef.current);
     setReports((prev) => {
       const next = prev.map((r) => (r.id === updatedReport.id ? updatedReport : r));
       try {
-        localStorage.setItem(STORAGE_KEY, JSON.stringify(next));
+        localStorage.setItem(currentStorageKey, JSON.stringify(next));
       } catch (e) {
         console.warn("Failed to persist edited report:", e);
       }
@@ -104,66 +225,66 @@ export function ReportsProvider({ children }) {
     });
   }, []);
 
-  const deleteReport = useCallback((reportId) => {
+  const deleteReport = useCallback(async (reportId) => {
     if (!reportId) return;
+    const currentStorageKey = getStorageKey(currentUserRef.current);
     setReports((prev) => {
       const next = prev.filter((r) => r.id !== reportId);
       try {
-        localStorage.setItem(STORAGE_KEY, JSON.stringify(next));
+        localStorage.setItem(currentStorageKey, JSON.stringify(next));
       } catch (e) {
         console.warn("Failed to persist deletion:", e);
       }
       return next;
     });
+
+    try {
+      await fetch(`/api/reports/${reportId}`, { method: "DELETE" });
+    } catch (e) {
+      console.warn("Server delete call failed:", e);
+    }
   }, []);
 
-  // Claim any local guest reports and bind them to the logged-in user on the server
-  const claimLocalReports = useCallback(async () => {
-    if (reports.length === 0) return;
-    try {
-      const res = await fetch("/api/reports/claim", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ reports }),
-      });
-      const data = await res.json();
-      if (data.reports && Array.isArray(data.reports)) {
-        setReports(data.reports);
-        localStorage.setItem(STORAGE_KEY, JSON.stringify(data.reports));
-      }
-    } catch (e) {
-      console.warn("Claim local reports failed:", e);
-    }
-  }, [reports]);
-
   const resetToDemo = useCallback(async () => {
-    if (!confirm("Reset to sample demo data? All custom uploaded reports will be replaced with initial sample data.")) return;
+    if (
+      !confirm(
+        "Reset to sample demo data?\n\nAll custom uploaded reports for your account will be replaced with fresh sample demo reports."
+      )
+    ) {
+      return;
+    }
+
+    const currentStorageKey = getStorageKey(currentUserRef.current);
     setLoading(true);
+    setIsSyncing(true);
+
     try {
-      localStorage.removeItem(STORAGE_KEY);
+      localStorage.removeItem(currentStorageKey);
       const res = await fetch("/api/reports/reset", { method: "POST" });
       const data = await res.json();
+
       if (data.reports && Array.isArray(data.reports)) {
         setReports(data.reports);
         try {
-          localStorage.setItem(STORAGE_KEY, JSON.stringify(data.reports));
+          localStorage.setItem(currentStorageKey, JSON.stringify(data.reports));
         } catch {}
+        setLastSynced(new Date());
       } else {
-        // Fallback fetch
-        const fallbackRes = await fetch("/api/reports");
-        const fallbackData = await fallbackRes.json();
-        if (fallbackData.reports) setReports(fallbackData.reports);
+        await syncWithServer();
       }
     } catch (e) {
       console.error("Failed to reset demo reports:", e);
       alert("Reset error: " + e.message);
     } finally {
       setLoading(false);
+      setIsSyncing(false);
     }
-  }, []);
+  }, [syncWithServer]);
 
   const allTestNames = useMemo(() => {
-    return [...new Set(reports.flatMap((r) => (r.tests || []).map((t) => t.name)))].filter(Boolean).sort();
+    return [...new Set(reports.flatMap((r) => (r.tests || []).map((t) => t.name)))]
+      .filter(Boolean)
+      .sort();
   }, [reports]);
 
   const allLabNames = useMemo(() => {
@@ -181,6 +302,8 @@ export function ReportsProvider({ children }) {
       value={{
         reports,
         loading,
+        isSyncing,
+        lastSynced,
         allTestNames,
         allLabNames,
         allMembers,
@@ -189,7 +312,8 @@ export function ReportsProvider({ children }) {
         deleteReport,
         claimLocalReports,
         resetToDemo,
-        refreshReports: loadReports,
+        syncWithServer,
+        refreshReports: syncWithServer,
       }}
     >
       {children}
