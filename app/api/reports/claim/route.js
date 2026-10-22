@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 import { getSessionFromRequest } from "@/lib/auth";
-import { getPrisma, getSampleReports } from "@/lib/prisma";
+import { getPrisma } from "@/lib/prisma";
 import { buildSummary } from "@/lib/extractor";
 
 export const runtime = "nodejs";
@@ -109,30 +109,11 @@ export async function POST(request) {
     }
 
     // Refresh and fetch all reports for this user
-    let allUserReports = await prisma.report.findMany({
+    const allUserReports = await prisma.report.findMany({
       where: userReportsWhere,
       include: { tests: true },
       orderBy: { reportDate: "desc" },
     });
-
-    // If user still has 0 reports (fresh account with no reports), seed standard demo reports
-    if (allUserReports.length === 0) {
-      for (const sample of getSampleReports()) {
-        await prisma.report.create({
-          data: {
-            ...sample,
-            userId: user.id,
-            userEmail: user.email,
-            tests: { create: sample.tests },
-          },
-        });
-      }
-      allUserReports = await prisma.report.findMany({
-        where: userReportsWhere,
-        include: { tests: true },
-        orderBy: { reportDate: "desc" },
-      });
-    }
 
     const reportsWithSummary = allUserReports.map((r) => ({
       ...r,

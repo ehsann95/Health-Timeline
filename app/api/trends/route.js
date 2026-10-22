@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 import { getPrisma } from "@/lib/prisma";
+import { getSessionFromRequest } from "@/lib/auth";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -29,13 +30,27 @@ function directionFor(testName) {
 export async function GET(request) {
   try {
     const prisma = await getPrisma();
+    const sessionUser = getSessionFromRequest(request);
     const { searchParams } = new URL(request.url);
     const testName = searchParams.get("test")?.trim().toLowerCase();
     if (!testName) {
       return NextResponse.json({ error: "Missing 'test' parameter" }, { status: 400 });
     }
 
+    let whereClause = {};
+    if (sessionUser) {
+      whereClause = {
+        OR: [
+          { userId: sessionUser.id },
+          { userEmail: sessionUser.email },
+        ],
+      };
+    } else {
+      whereClause = { userId: null };
+    }
+
     const reports = await prisma.report.findMany({
+      where: whereClause,
       include: { tests: true },
       orderBy: { reportDate: "asc" },
     });

@@ -11,6 +11,8 @@ import {
 } from "react";
 import { useAuth } from "@/context/AuthContext";
 
+const DELETED_IDS_KEY = "health_timeline_deleted_ids";
+
 const ReportsContext = createContext({
   reports: [],
   loading: true,
@@ -23,6 +25,8 @@ const ReportsContext = createContext({
   updateReport: () => {},
   deleteReport: async () => {},
   claimLocalReports: async () => {},
+  clearAllReports: async () => {},
+  loadDemoReports: async () => {},
   resetToDemo: async () => {},
   syncWithServer: async () => {},
   refreshReports: async () => {},
@@ -36,6 +40,37 @@ function getStorageKey(user) {
   return "health_timeline_guest_reports";
 }
 
+function getDeletedIds() {
+  try {
+    const raw = localStorage.getItem(DELETED_IDS_KEY);
+    if (!raw) return new Set();
+    const parsed = JSON.parse(raw);
+    return new Set(Array.isArray(parsed) ? parsed : []);
+  } catch {
+    return new Set();
+  }
+}
+
+function recordDeletedId(id) {
+  try {
+    const set = getDeletedIds();
+    set.add(id);
+    localStorage.setItem(DELETED_IDS_KEY, JSON.stringify(Array.from(set)));
+  } catch (e) {
+    console.warn("Failed to record deleted id:", e);
+  }
+}
+
+function unrecordDeletedId(id) {
+  try {
+    const set = getDeletedIds();
+    if (set.has(id)) {
+      set.delete(id);
+      localStorage.setItem(DELETED_IDS_KEY, JSON.stringify(Array.from(set)));
+    }
+  } catch {}
+}
+
 export function ReportsProvider({ children }) {
   const { user, loading: authLoading } = useAuth();
   const [reports, setReports] = useState([]);
@@ -43,11 +78,14 @@ export function ReportsProvider({ children }) {
   const [isSyncing, setIsSyncing] = useState(false);
   const [lastSynced, setLastSynced] = useState(null);
 
-  // Keep a ref to current user to avoid race conditions during async transitions
   const currentUserRef = useRef(user);
   currentUserRef.current = user;
 
-  // Authoritative server fetch and sync
+  const currentReportsRef = useRef(reports);
+  currentReportsRef.current = reports;
+
+  // Two-way resilient server sync: re-hydrates ephemeral serverless containers
+  // while NEVER destroying local browser reports if the server is cold or empty
   const syncWithServer = useCallback(async (opts = {}) => {
     const silent = opts.silent ?? false;
     if (!silent) setIsSyncing(true);
@@ -55,26 +93,51 @@ export function ReportsProvider({ children }) {
     const currentUser = currentUserRef.current;
     const targetKey = getStorageKey(currentUser);
 
+    // Read current local state or cached storage
+    let localData = currentReportsRef.current;
+    if (!localData || localData.length === 0) {
+      try {
+        const cached = localStorage.getItem(targetKey);
+        if (cached) {
+          const parsed = JSON.parse(cached);
+          if (Array.isArray(parsed)) localData = parsed;
+        }
+      } catch {}
+    }
+
+    const deletedSet = getDeletedIds();
+    const deletedIds = Array.from(deletedSet);
+
     try {
-      const res = await fetch("/api/reports");
+      const res = await fetch("/api/reports/sync", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          reports: localData || [],
+          deletedIds,
+        }),
+      });
+
       if (!res.ok) throw new Error(`HTTP error ${res.status}`);
       const data = await res.json();
 
       if (data.reports && Array.isArray(data.reports)) {
-        // Verify user hasn't switched during fetch
         if (currentUserRef.current?.email === currentUser?.email) {
-          setReports(data.reports);
+          // Filter out any explicitly deleted records
+          const filtered = data.reports.filter((r) => !deletedSet.has(r.id));
+          setReports(filtered);
           try {
-            localStorage.setItem(targetKey, JSON.stringify(data.reports));
+            localStorage.setItem(targetKey, JSON.stringify(filtered));
           } catch (e) {
             console.warn("Failed to write to localStorage:", e);
           }
           setLastSynced(new Date());
-          return { ok: true, count: data.reports.length };
+          return { ok: true, count: filtered.length };
         }
       }
     } catch (err) {
-      console.warn("Sync with server failed:", err);
+      console.warn("Sync with server warning (preserving local data):", err);
+      // Keep local data safe! Never overwrite with empty on error.
       return { ok: false, error: err.message };
     } finally {
       if (!silent) setIsSyncing(false);
@@ -119,7 +182,6 @@ export function ReportsProvider({ children }) {
         setReports(data.reports);
         try {
           localStorage.setItem(userKey, JSON.stringify(data.reports));
-          // Clean up legacy guest keys once successfully claimed
           localStorage.removeItem("health_timeline_guest_reports");
           localStorage.removeItem("health_timeline_reports_v1");
         } catch {}
@@ -132,7 +194,7 @@ export function ReportsProvider({ children }) {
     }
   }, []);
 
-  // Main lifecycle: re-sync whenever user or auth loading state changes
+  // Main lifecycle: restore local cache immediately, then sync
   useEffect(() => {
     if (authLoading) return;
 
@@ -144,7 +206,7 @@ export function ReportsProvider({ children }) {
       const cached = localStorage.getItem(currentStorageKey);
       if (cached) {
         const parsed = JSON.parse(cached);
-        if (Array.isArray(parsed) && parsed.length > 0) {
+        if (Array.isArray(parsed)) {
           setReports(parsed);
           setLoading(false);
         }
@@ -153,11 +215,10 @@ export function ReportsProvider({ children }) {
       console.warn("Could not read local cache:", e);
     }
 
-    // 2. If logged in, claim any pending guest reports, then sync authoritative data
-    async function initUserReports() {
+    // 2. Perform background sync with server
+    async function initReports() {
       try {
         if (user) {
-          // Check for pending guest data to claim
           const guestCached =
             localStorage.getItem("health_timeline_guest_reports") ||
             localStorage.getItem("health_timeline_reports_v1");
@@ -171,14 +232,14 @@ export function ReportsProvider({ children }) {
       }
     }
 
-    initUserReports();
+    initReports();
 
     return () => {
       isMounted = false;
     };
   }, [user, authLoading, claimLocalReports, syncWithServer]);
 
-  // Auto-sync on window focus / visibility change (cross-device & cross-tab detection)
+  // Auto-sync on window focus / visibility change
   useEffect(() => {
     function handleVisibilityOrFocus() {
       if (document.visibilityState === "visible") {
@@ -197,7 +258,8 @@ export function ReportsProvider({ children }) {
 
   // Client mutations
   const addReport = useCallback((newReport) => {
-    if (!newReport) return;
+    if (!newReport || !newReport.id) return;
+    unrecordDeletedId(newReport.id);
     const currentStorageKey = getStorageKey(currentUserRef.current);
     setReports((prev) => {
       const filtered = prev.filter((r) => r.id !== newReport.id);
@@ -212,7 +274,7 @@ export function ReportsProvider({ children }) {
   }, []);
 
   const updateReport = useCallback((updatedReport) => {
-    if (!updatedReport) return;
+    if (!updatedReport || !updatedReport.id) return;
     const currentStorageKey = getStorageKey(currentUserRef.current);
     setReports((prev) => {
       const next = prev.map((r) => (r.id === updatedReport.id ? updatedReport : r));
@@ -227,6 +289,7 @@ export function ReportsProvider({ children }) {
 
   const deleteReport = useCallback(async (reportId) => {
     if (!reportId) return;
+    recordDeletedId(reportId);
     const currentStorageKey = getStorageKey(currentUserRef.current);
     setReports((prev) => {
       const next = prev.filter((r) => r.id !== reportId);
@@ -245,10 +308,11 @@ export function ReportsProvider({ children }) {
     }
   }, []);
 
-  const resetToDemo = useCallback(async () => {
+  // Clear all data completely (no demo data)
+  const clearAllReports = useCallback(async () => {
     if (
       !confirm(
-        "Reset to sample demo data?\n\nAll custom uploaded reports for your account will be replaced with fresh sample demo reports."
+        "Clear all lab reports?\n\nThis will permanently delete all records from your timeline and account."
       )
     ) {
       return;
@@ -260,7 +324,44 @@ export function ReportsProvider({ children }) {
 
     try {
       localStorage.removeItem(currentStorageKey);
-      const res = await fetch("/api/reports/reset", { method: "POST" });
+      localStorage.removeItem(DELETED_IDS_KEY);
+      setReports([]);
+
+      await fetch("/api/reports/reset", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ action: "clear" }),
+      });
+      setLastSynced(new Date());
+    } catch (e) {
+      console.error("Failed to clear reports:", e);
+      alert("Clear error: " + e.message);
+    } finally {
+      setLoading(false);
+      setIsSyncing(false);
+    }
+  }, []);
+
+  // Dedicated button action to load sample demo data ONLY when explicitly requested
+  const loadDemoReports = useCallback(async () => {
+    if (
+      !confirm(
+        "Load sample demo reports (CBC, LFT)?\n\nThis will add sample laboratory records so you can explore comparisons and biomarker charts."
+      )
+    ) {
+      return;
+    }
+
+    const currentStorageKey = getStorageKey(currentUserRef.current);
+    setLoading(true);
+    setIsSyncing(true);
+
+    try {
+      const res = await fetch("/api/reports/reset", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ action: "demo" }),
+      });
       const data = await res.json();
 
       if (data.reports && Array.isArray(data.reports)) {
@@ -269,17 +370,15 @@ export function ReportsProvider({ children }) {
           localStorage.setItem(currentStorageKey, JSON.stringify(data.reports));
         } catch {}
         setLastSynced(new Date());
-      } else {
-        await syncWithServer();
       }
     } catch (e) {
-      console.error("Failed to reset demo reports:", e);
-      alert("Reset error: " + e.message);
+      console.error("Failed to load demo reports:", e);
+      alert("Demo loading error: " + e.message);
     } finally {
       setLoading(false);
       setIsSyncing(false);
     }
-  }, [syncWithServer]);
+  }, []);
 
   const allTestNames = useMemo(() => {
     return [...new Set(reports.flatMap((r) => (r.tests || []).map((t) => t.name)))]
@@ -311,7 +410,9 @@ export function ReportsProvider({ children }) {
         updateReport,
         deleteReport,
         claimLocalReports,
-        resetToDemo,
+        clearAllReports,
+        loadDemoReports,
+        resetToDemo: clearAllReports, // alias
         syncWithServer,
         refreshReports: syncWithServer,
       }}

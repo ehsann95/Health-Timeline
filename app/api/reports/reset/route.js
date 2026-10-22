@@ -10,6 +10,8 @@ export async function POST(request) {
   try {
     const prisma = await getPrisma();
     const sessionUser = getSessionFromRequest(request);
+    const body = await request.json().catch(() => ({}));
+    const action = body.action || "clear"; // "clear" | "demo"
 
     let whereClause = {};
     let userId = null;
@@ -44,33 +46,42 @@ export async function POST(request) {
       });
     }
 
-    // Re-seed clean demo sample reports for this user
-    const samples = getSampleReports();
-    const createdReports = [];
+    // If explicit "demo" action requested, seed demo sample reports
+    if (action === "demo") {
+      const samples = getSampleReports();
+      const createdReports = [];
 
-    for (const r of samples) {
-      const created = await prisma.report.create({
-        data: {
-          patientName: r.patientName,
-          reportType: r.reportType,
-          labName: r.labName,
-          reportDate: r.reportDate,
-          userId,
-          userEmail,
-          tests: { create: r.tests },
-        },
-        include: { tests: true },
-      });
-      createdReports.push({
-        ...created,
-        summary: buildSummary(created.tests || []),
+      for (const r of samples) {
+        const created = await prisma.report.create({
+          data: {
+            patientName: r.patientName,
+            reportType: r.reportType,
+            labName: r.labName,
+            reportDate: r.reportDate,
+            userId,
+            userEmail,
+            tests: { create: r.tests },
+          },
+          include: { tests: true },
+        });
+        createdReports.push({
+          ...created,
+          summary: buildSummary(created.tests || []),
+        });
+      }
+
+      return NextResponse.json({
+        ok: true,
+        message: "Sample demo reports loaded",
+        reports: createdReports,
       });
     }
 
+    // Default "clear" action: return 0 reports
     return NextResponse.json({
       ok: true,
-      message: "Database successfully reset to demo sample reports",
-      reports: createdReports,
+      message: "All reports successfully cleared",
+      reports: [],
     });
   } catch (e) {
     console.error("Reset API error:", e);
