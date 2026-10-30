@@ -3,6 +3,8 @@
 import { useMemo, useState } from "react";
 import { useReports } from "@/context/ReportsContext";
 
+const MAX_READINGS = 5; // Show up to 5 most recent values
+
 const CATEGORY_ICONS = {
   CBC: "🩸",
   LFT: "🧪",
@@ -28,8 +30,8 @@ export default function DoctorSummaryModal({ isOpen, onClose }) {
     return reports.filter((r) => (r.patientName || "Self").toLowerCase() === selectedMember.toLowerCase());
   }, [reports, selectedMember]);
 
-  // Compute complete test histories for this member (no arbitrary slicing)
-  const { abnormalTests, testTrajectories, recentLabs, testsByCategory } = useMemo(() => {
+  // Compute complete test histories for this member
+  const { abnormalTests, testTrajectories, recentLabs, reportDates } = useMemo(() => {
     const sorted = [...memberReports].sort(
       (a, b) => new Date(b.reportDate || b.createdAt) - new Date(a.reportDate || a.createdAt)
     );
@@ -73,27 +75,34 @@ export default function DoctorSummaryModal({ isOpen, onClose }) {
       }
     }
 
+    // Build trajectories with up to MAX_READINGS recent values
     const trajectories = Array.from(testMap.values()).map((item) => {
-      const latest = item.readings[0];
-      const previous = item.readings[1] || null;
+      const recentReadings = item.readings.slice(0, MAX_READINGS);
+      const latest = recentReadings[0];
+      const previous = recentReadings[1] || null;
       let trend = "STABLE";
       if (previous && latest.value !== previous.value) {
         trend = latest.value > previous.value ? "INCREASING" : "DECREASING";
       }
       return {
         ...item,
+        recentReadings,
         latest,
         previous,
         trend,
       };
     });
 
-    // Group tests by clinical category for structured multi-page reading
-    const byCategory = {};
-    for (const item of trajectories) {
-      const cat = item.category || "Other";
-      if (!byCategory[cat]) byCategory[cat] = [];
-      byCategory[cat].push(item);
+    // Collect unique report dates (newest first) for column headers
+    const uniqueDates = [];
+    const seenDates = new Set();
+    for (const r of sorted) {
+      const d = r.reportDate || r.createdAt;
+      const key = new Date(d).toISOString().slice(0, 10);
+      if (!seenDates.has(key)) {
+        seenDates.add(key);
+        uniqueDates.push(d);
+      }
     }
 
     const recentLabsList = sorted.map((r) => ({
@@ -104,9 +113,9 @@ export default function DoctorSummaryModal({ isOpen, onClose }) {
     }));
 
     return {
-      abnormalTests: abnormalList, // Full abnormal list (no truncation)
-      testTrajectories: trajectories, // Full test trajectories (no truncation)
-      testsByCategory: byCategory,
+      abnormalTests: abnormalList,
+      testTrajectories: trajectories,
+      reportDates: uniqueDates.slice(0, MAX_READINGS),
       recentLabs: recentLabsList,
     };
   }, [memberReports]);
@@ -123,9 +132,29 @@ export default function DoctorSummaryModal({ isOpen, onClose }) {
     year: "numeric",
   });
 
+  function formatShortDate(d) {
+    if (!d) return "—";
+    return new Date(d).toLocaleDateString("en-GB", {
+      day: "2-digit",
+      month: "short",
+      year: "2-digit",
+    });
+  }
+
+  // Group trajectories by category for structured display
+  const categorizedTrajectories = {};
+  for (const item of testTrajectories) {
+    const cat = item.category || "Other";
+    if (!categorizedTrajectories[cat]) categorizedTrajectories[cat] = [];
+    categorizedTrajectories[cat].push(item);
+  }
+
+  // Determine how many date columns to show (at least 1, up to MAX_READINGS)
+  const numDateCols = Math.max(1, reportDates.length);
+
   return (
     <div className="doctor-summary-modal-overlay fixed inset-0 z-50 flex items-center justify-center bg-slate-900/60 backdrop-blur-sm p-3 sm:p-6 overflow-y-auto">
-      <div className="doctor-summary-modal-content bg-white rounded-2xl shadow-2xl border border-slate-200 max-w-4xl w-full my-auto overflow-hidden">
+      <div className="doctor-summary-modal-content bg-white rounded-2xl shadow-2xl border border-slate-200 max-w-6xl w-full my-auto overflow-hidden">
           {/* Top Control Bar (Hidden when printing) */}
           <div className="bg-slate-900 text-white px-5 sm:px-6 py-3.5 flex flex-wrap items-center justify-between gap-3 print:hidden">
             <div className="flex items-center gap-2">
@@ -225,13 +254,13 @@ export default function DoctorSummaryModal({ isOpen, onClose }) {
               </div>
             </div>
 
-            {/* Critical Abnormal Findings Box (Complete list, no limit) */}
+            {/* Critical Abnormal Findings Box */}
             <div className="print-avoid-break">
               {abnormalTests.length > 0 ? (
                 <div className="border border-red-300 bg-red-50/70 rounded-xl p-4 space-y-2.5 print:border-red-400">
                   <h3 className="text-xs font-bold uppercase tracking-wider text-red-800 flex items-center gap-1.5">
                     <span>⚠️</span>
-                    <span>Out-of-Range / Abnormal Clinical Findings ({abnormalTests.length} tests)</span>
+                    <span>Out-of-Range / Abnormal Clinical Findings ({abnormalTests.length} readings)</span>
                   </h3>
                   <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 text-xs">
                     {abnormalTests.map((t, i) => (
@@ -250,6 +279,9 @@ export default function DoctorSummaryModal({ isOpen, onClose }) {
                           </div>
                           <span className="text-[11px] text-slate-500 block">
                             Ref: {t.refLow ?? "?"} – {t.refHigh ?? "?"} {t.unit || ""}
+                            {t.date && (
+                              <span className="ml-1 text-slate-400">· {formatShortDate(t.date)}</span>
+                            )}
                           </span>
                         </div>
                         <div className="text-right">
@@ -272,88 +304,123 @@ export default function DoctorSummaryModal({ isOpen, onClose }) {
               )}
             </div>
 
-            {/* Complete Biomarker Trajectory & Results Table (All categories, multi-page flow) */}
-            <div className="space-y-4">
+            {/* Biomarker History Table — Recent 5 Values per Category */}
+            <div className="space-y-5">
               <div className="flex items-center justify-between">
                 <h3 className="text-xs font-bold uppercase tracking-wider text-slate-700">
-                  Biomarker Records &amp; Trajectory Across All Tests ({testTrajectories.length} tests)
+                  Biomarker History · Last {numDateCols} Reading{numDateCols !== 1 ? "s" : ""} per Marker ({testTrajectories.length} tests)
                 </h3>
                 <span className="text-[11px] text-slate-400 print:hidden">
-                  Full records shown below
+                  Grouped by clinical panel
                 </span>
               </div>
 
-              <div className="border border-slate-200 rounded-xl overflow-hidden print:border-slate-300">
-                <table className="w-full text-left text-xs">
-                  <thead className="bg-slate-100 border-b border-slate-200 text-slate-700 font-semibold print-table-header">
-                    <tr>
-                      <th className="py-2.5 px-3">Biomarker</th>
-                      <th className="py-2.5 px-3">Panel</th>
-                      <th className="py-2.5 px-3">Latest Value</th>
-                      <th className="py-2.5 px-3">Previous</th>
-                      <th className="py-2.5 px-3">Reference Range</th>
-                      <th className="py-2.5 px-3">Status</th>
-                    </tr>
-                  </thead>
-                  <tbody className="divide-y divide-slate-100">
-                    {testTrajectories.map((item) => {
-                      const isAbnormal = item.latest?.flag !== "NORMAL";
-                      return (
-                        <tr
-                          key={item.name}
-                          className={`print-row-avoid ${
-                            isAbnormal ? "bg-red-50/40" : "hover:bg-slate-50"
-                          }`}
-                        >
-                          <td className="py-2 px-3 font-semibold text-slate-900">
-                            {item.name}
-                          </td>
-                          <td className="py-2 px-3 text-slate-500">
-                            <span className="inline-flex items-center gap-1">
-                              <span>{CATEGORY_ICONS[item.category] || "📋"}</span>
-                              <span>{item.category}</span>
-                            </span>
-                          </td>
-                          <td className="py-2 px-3 font-bold text-slate-900">
-                            {item.latest?.value} {item.unit}
-                          </td>
-                          <td className="py-2 px-3 text-slate-500">
-                            {item.previous ? (
-                              <span className="inline-flex items-center gap-1">
-                                <span>{item.previous.value} {item.unit}</span>
-                                {item.trend === "INCREASING" && <span className="text-red-500 font-bold">↑</span>}
-                                {item.trend === "DECREASING" && <span className="text-blue-500 font-bold">↓</span>}
-                              </span>
-                            ) : (
-                              "—"
-                            )}
-                          </td>
-                          <td className="py-2 px-3 text-slate-600 font-mono text-[11px]">
-                            {item.refLow != null && item.refHigh != null
-                              ? `${item.refLow} – ${item.refHigh} ${item.unit || ""}`
-                              : item.refHigh != null
-                              ? `< ${item.refHigh} ${item.unit || ""}`
-                              : "Standard"}
-                          </td>
-                          <td className="py-2 px-3">
-                            <span
-                              className={`inline-block px-2 py-0.5 rounded text-[10px] font-bold ${
-                                item.latest?.flag === "HIGH"
-                                  ? "bg-red-100 text-red-800"
-                                  : item.latest?.flag === "LOW"
-                                  ? "bg-blue-100 text-blue-800"
-                                  : "bg-green-100 text-green-800"
+              {Object.entries(categorizedTrajectories).map(([category, items]) => (
+                <div key={category} className="print-avoid-break">
+                  {/* Category Header */}
+                  <div className="flex items-center gap-2 mb-1.5">
+                    <span className="text-base">{CATEGORY_ICONS[category] || "📋"}</span>
+                    <h4 className="text-xs font-bold uppercase tracking-wider text-slate-600">
+                      {category} Panel ({items.length} tests)
+                    </h4>
+                  </div>
+
+                  <div className="border border-slate-200 rounded-xl overflow-hidden print:border-slate-300 mb-4">
+                    <table className="w-full text-left text-xs">
+                      <thead className="bg-slate-100 border-b border-slate-200 text-slate-700 font-semibold print-table-header">
+                        <tr>
+                          <th className="py-2 px-2 sm:px-3 whitespace-nowrap">Biomarker</th>
+                          <th className="py-2 px-2 sm:px-3 whitespace-nowrap">Ref Range</th>
+                          {reportDates.slice(0, MAX_READINGS).map((d, i) => (
+                            <th key={i} className="py-2 px-2 sm:px-3 text-center whitespace-nowrap">
+                              <div className="text-[10px] text-slate-500 font-normal">{formatShortDate(d)}</div>
+                              {i === 0 && <div className="text-[9px] text-blue-600 font-bold">LATEST</div>}
+                            </th>
+                          ))}
+                          <th className="py-2 px-2 sm:px-3 text-center whitespace-nowrap">Trend</th>
+                        </tr>
+                      </thead>
+                      <tbody className="divide-y divide-slate-100">
+                        {items.map((item) => {
+                          const isAbnormal = item.latest?.flag !== "NORMAL";
+                          return (
+                            <tr
+                              key={item.name}
+                              className={`print-row-avoid ${
+                                isAbnormal ? "bg-red-50/40" : "hover:bg-slate-50"
                               }`}
                             >
-                              {item.latest?.flag || "NORMAL"}
-                            </span>
-                          </td>
-                        </tr>
-                      );
-                    })}
-                  </tbody>
-                </table>
-              </div>
+                              <td className="py-1.5 px-2 sm:px-3 font-semibold text-slate-900 whitespace-nowrap">
+                                {item.name}
+                              </td>
+                              <td className="py-1.5 px-2 sm:px-3 text-slate-500 font-mono text-[10px] whitespace-nowrap">
+                                {item.refLow != null && item.refHigh != null
+                                  ? `${item.refLow}–${item.refHigh}`
+                                  : item.refHigh != null
+                                  ? `< ${item.refHigh}`
+                                  : "—"}
+                                {item.unit ? ` ${item.unit}` : ""}
+                              </td>
+                              {/* Render value cells aligned to the report date columns */}
+                              {reportDates.slice(0, MAX_READINGS).map((colDate, colIdx) => {
+                                const colKey = new Date(colDate).toISOString().slice(0, 10);
+                                // Find a reading for this test on this date
+                                const reading = item.recentReadings.find(
+                                  (r) => new Date(r.date).toISOString().slice(0, 10) === colKey
+                                );
+                                if (!reading) {
+                                  return (
+                                    <td key={colIdx} className="py-1.5 px-2 sm:px-3 text-center text-slate-300">
+                                      —
+                                    </td>
+                                  );
+                                }
+                                const flagCls =
+                                  reading.flag === "HIGH"
+                                    ? "text-red-700 font-bold"
+                                    : reading.flag === "LOW"
+                                    ? "text-blue-700 font-bold"
+                                    : "text-slate-900";
+                                return (
+                                  <td key={colIdx} className={`py-1.5 px-2 sm:px-3 text-center ${flagCls}`}>
+                                    <span className="font-semibold">{reading.value}</span>
+                                    {reading.flag !== "NORMAL" && (
+                                      <span className="ml-0.5 text-[9px]">
+                                        {reading.flag === "HIGH" ? "▲" : "▼"}
+                                      </span>
+                                    )}
+                                  </td>
+                                );
+                              })}
+                              <td className="py-1.5 px-2 sm:px-3 text-center">
+                                {item.recentReadings.length > 1 ? (
+                                  <span
+                                    className={`inline-block text-[10px] font-bold ${
+                                      item.trend === "INCREASING"
+                                        ? "text-red-600"
+                                        : item.trend === "DECREASING"
+                                        ? "text-blue-600"
+                                        : "text-green-600"
+                                    }`}
+                                  >
+                                    {item.trend === "INCREASING"
+                                      ? "↑ Rising"
+                                      : item.trend === "DECREASING"
+                                      ? "↓ Falling"
+                                      : "→ Stable"}
+                                  </span>
+                                ) : (
+                                  <span className="text-[10px] text-slate-400">—</span>
+                                )}
+                              </td>
+                            </tr>
+                          );
+                        })}
+                      </tbody>
+                    </table>
+                  </div>
+                </div>
+              ))}
             </div>
 
             {/* All Laboratory Sources & Dates */}

@@ -8,8 +8,8 @@ body {
 
 @media print {
   @page {
-    size: A4 portrait;
-    margin: 12mm 14mm;
+    size: A4 landscape;
+    margin: 10mm 12mm;
   }
   html, body {
     background: #ffffff !important;
@@ -17,6 +17,11 @@ body {
     height: auto !important;
     overflow: visible !important;
   }
+  /* Hide ALL page content behind the modal when printing */
+  .print-hide-for-summary {
+    display: none !important;
+  }
+  /* The modal overlay becomes a static block for print flow */
   .doctor-summary-modal-overlay {
     position: static !important;
     background: none !important;

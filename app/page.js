@@ -120,6 +120,8 @@ export default function Home() {
 
   return (
     <div className="space-y-6">
+      {/* Dashboard content (hidden when printing doctor summary) */}
+      <div className={doctorSummaryOpen ? "print-hide-for-summary" : ""}>
       {/* Page Header */}
       <div className="flex flex-wrap items-center justify-between gap-4">
         <div>
@@ -340,6 +342,7 @@ export default function Home() {
           ))}
         </div>
       )}
+      </div>{/* end print-hide-for-summary wrapper */}
 
       {/* Doctor Consultation Briefing Modal */}
       <DoctorSummaryModal
